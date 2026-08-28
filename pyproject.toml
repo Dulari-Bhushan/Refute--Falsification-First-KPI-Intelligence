@@ -18,6 +18,8 @@ dependencies = [
     "transformers>=5.16.1",
     "torch>=2.11.0",
     "triton-windows>=3.7.1.post27",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.4",
 ]
 
 # Pin torch to the CUDA 12.8 wheel index permanently -- without this, `uv

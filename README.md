@@ -15,6 +15,7 @@ This README captures the accumulated context from Round 1 (accepted concept) and
 ```bash
 uv run python run_pipeline.py               # templated path: all six layers, no LLM calls, a few seconds
 uv run python run_pipeline.py --with-llm    # + live local-GPU LLM predicate generation (needs CUDA; downloads ~6GB on first run)
+uv run uvicorn api.main:app --reload        # then open http://127.0.0.1:8000 -- the web dashboard (run the pipeline first)
 ```
 
 ### What's working
@@ -31,6 +32,7 @@ uv run python run_pipeline.py --with-llm    # + live local-GPU LLM predicate gen
 | L5 Adjudicate | [engine/l5_adjudicate.py](engine/l5_adjudicate.py) | DiD (log-scale, unit fixed effects, cluster-robust → HC1 fallback below 4 clusters/side), mandatory parallel-trends check, the power gate, BH-FDR correction |
 | L6 Narrate + Ledger | [engine/l6_narrate_ledger.py](engine/l6_narrate_ledger.py) | Structured action template, persona rendering (2 roles, entitlement-filtered), SQLite ledger, telemetry, feedback-as-falsification-event |
 | L4 Live LLM generation | [engine/l4_llm_generation.py](engine/l4_llm_generation.py) | Local GPU (Qwen2.5-3B-Instruct via `outlines`, token-level schema-constrained decoding), two-gate validation (schema + semantic domain), graceful fallback, real telemetry |
+| Web UI | [api/main.py](api/main.py), [ui/](ui/) | FastAPI backend reading the pipeline's own JSON/SQLite output (no separate analysis logic) + a static dashboard: KPI chart with changepoint marker, hypothesis cards, persona toggle (with a *real* `check_entitlement` call behind the entitlement note, not a hardcoded guess), evidence/freshness table, telemetry strip, live feedback-loop demo |
 
 ### The canonical worked example, actually running
 
@@ -69,7 +71,6 @@ Documented in the code where they were found, since they're the kind of thing wo
 
 ### What's NOT built yet
 
-- **UI.** No FastAPI backend or frontend yet — everything above is driven by `run_pipeline.py` and reads/writes JSON + SQLite in `data/synthetic/`.
 - **Reconciliation-as-falsification for row/column security beyond the one entitlement demo.** The role-based scenario works (`regional_vp` denied rep-level detail, `ops_manager_west` allowed) but only two roles/one denial path are wired up.
 - **Ledger calibration.** Brier score / reliability diagram / isotonic recalibration code isn't written yet — needs ~30 scored outcomes to be meaningful anyway (honesty note already printed by `l6_narrate_ledger.py`).
 - **Tier 3 stretch features** (visible counterfactual projection, adversarial counter-hypothesis generation) — not started, reach-only per the original plan.
@@ -269,6 +270,6 @@ The Round 2 brief expands the ask beyond what the Round 1 architecture explicitl
 **Superseded by [§0](#0-implementation-status-updated-2026-08-28) above** — the gap list this section originally pointed to has been built and validated (see §0's table and worked-example results). This section is kept for history; the live plan is the one at `.claude/plans/so-tell-me-what-federated-brook.md` (see that file's own updated status/next-step sections), and the actionable next-step list is:
 
 1. ~~Live LLM wiring~~ — **done**, see [§0's live-LLM section](#live-llm-predicate-generation-also-actually-running) above (`engine/l4_llm_generation.py`, Qwen2.5-3B-Instruct on local GPU via `outlines`).
-2. **Minimal UI** (FastAPI + a small frontend) — the demo footage target from the original plan: KPI series with changepoint markers → hypothesis cards (struck through / surviving) → narrated brief in both personas → evidence panel → telemetry/cost strip → live entitlement-denial example → feedback-rejection example. Everything it needs to render already exists as JSON/SQLite output from `run_pipeline.py`. This is now the top of the list.
-3. **Tier 3 stretch features** (visible counterfactual projection, adversarial counter-hypothesis generation) — only after 2 is demo-solid, per the original plan's own sequencing.
+2. ~~Minimal UI~~ — **done**, `api/main.py` + `ui/` (`uv run uvicorn api.main:app --reload`): KPI series with a changepoint marker, hypothesis cards, persona toggle with a real (not hardcoded) entitlement check, evidence/freshness table, telemetry strip, and a working feedback-loop demo, all reading the pipeline's existing JSON/SQLite output.
+3. **Tier 3 stretch features** (visible counterfactual projection, adversarial counter-hypothesis generation) — now the top of the remaining list, per the original plan's own sequencing.
 4. Ledger calibration scoring (Brier score, reliability diagram) once real scored outcomes accrue — not before, per the honesty constraint already enforced in `l6_narrate_ledger.py`.
