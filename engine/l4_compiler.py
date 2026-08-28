@@ -58,7 +58,7 @@ CONTRACT_PATH = Path(__file__).parent.parent / "semantic" / "kpi_contract.yaml"
 
 
 class DimFilter(BaseModel):
-    dim: Literal["fulfillment_center", "product_category", "rep_id"]
+    dim: Literal["fulfillment_center", "product_category", "rep_id", "channel"]
     in_: list[str] = Field(alias="in", min_length=1)
 
     model_config = {"populate_by_name": True}
@@ -139,8 +139,9 @@ DIM_REGISTRY = {
         "region_col": "region",
         "requires_entitlement": "rep_detail_restricted",
     },
+    "channel": {"table": "marketing_spend", "value_col": "spend_usd", "time_col": "week", "grain_col": "channel", "region_col": "region"},
 }
-WHITELISTED_TABLES = {"pos_transactions", "crm_headcount"}
+WHITELISTED_TABLES = {"pos_transactions", "crm_headcount", "marketing_spend"}
 
 
 class EntitlementDenied(Exception):
@@ -166,6 +167,31 @@ def check_entitlement(role: str, region: str, dim: str, contract: dict) -> None:
         raise EntitlementDenied(f"Role '{role}' is denied column-level access to '{required_scope}' (dimension '{dim}').")
 
 
+def check_domain_entitlement(role: str, kpi_name: str, contract: dict) -> None:
+    """Deny-by-default at the KPI-DOMAIN level -- checked independently of,
+    and typically before, check_entitlement's row/column checks (see
+    GAPS.md item 2). Row/column scope decide how much detail a role gets
+    WITHIN a KPI it's already allowed to see (which region, which
+    dimension); this decides whether the role can see that KPI's numbers
+    AT ALL, including the region-level aggregate. That distinction is real,
+    not academic: before this function existed, nothing stopped a role
+    denied rep-level column access from still seeing rep_attributed_
+    revenue's aggregate regional trend -- only the rep_id DIMENSION was
+    ever gated. A role's domain_scope is a KPI's semantic contract entry
+    (kpis.<name>.domain), so an unknown/undeclared domain fails closed the
+    same way an unknown role does."""
+    entitlements = contract["entitlements"].get(role)
+    if entitlements is None:
+        raise EntitlementDenied(f"Unknown role '{role}'.")
+    kpi_meta = contract["kpis"].get(kpi_name)
+    if kpi_meta is None:
+        raise EntitlementDenied(f"Unknown KPI '{kpi_name}'.")
+    domain = kpi_meta.get("domain")
+    allowed_domains = entitlements.get("domain_scope", [])
+    if domain is None or domain not in allowed_domains:
+        raise EntitlementDenied(f"Role '{role}' has no domain-level access to KPI '{kpi_name}' (domain '{domain}').")
+
+
 # --------------------------------------------------------------------------
 # Database + compiler
 # --------------------------------------------------------------------------
@@ -187,6 +213,9 @@ def load_database() -> sqlite3.Connection:
 
     crm = pd.read_csv(DATA_DIR / "crm_headcount.csv")
     crm.to_sql("crm_headcount", conn, index=False)
+
+    mkt = pd.read_csv(DATA_DIR / "marketing_spend.csv")
+    mkt.to_sql("marketing_spend", conn, index=False)
     return conn
 
 
@@ -241,6 +270,7 @@ def fetch_unit_panel(conn: sqlite3.Connection, predicate: "Predicate", region: s
     compile_predicate/run_compiled_test's pre-aggregated group totals
     (which are what the quick treatment-vs-control printout in main() uses
     for a fast eyeball check)."""
+    check_domain_entitlement(role, predicate.outcome.metric, contract)
     check_entitlement(role, region, predicate.treatment.dim, contract)
     time_col = DIM_REGISTRY[predicate.treatment.dim]["time_col"]
     pre_window, post_window = windows[time_col]
@@ -286,6 +316,44 @@ def fetch_unit_panel(conn: sqlite3.Connection, predicate: "Predicate", region: s
     panel.attrs["time_col"] = time_col
     panel.attrs.update(panel_attrs_sql)
     return panel
+
+
+def compile_dose_response_queries(region: str, channels: list[str], time_lo: int, time_hi: int) -> dict:
+    """dose_response's dose (per-channel marketing spend) and outcome
+    (regional revenue) live in different tables -- unlike compile_query/
+    compile_unit_query, which assume dose and outcome share one value
+    column in one table. Two separately whitelisted, parameterised queries
+    instead of one, each hashed the same way every other traceable query
+    is (see sql_hash)."""
+    dose_meta = DIM_REGISTRY["channel"]
+    if dose_meta["table"] not in WHITELISTED_TABLES:
+        raise PredicateRejected(f"Table '{dose_meta['table']}' is not whitelisted.")
+    placeholders = ",".join("?" for _ in channels)
+    dose_sql = (
+        f"SELECT {dose_meta['grain_col']} AS channel, {dose_meta['time_col']} AS period, SUM({dose_meta['value_col']}) AS value "
+        f"FROM {dose_meta['table']} "
+        f"WHERE {dose_meta['region_col']} = ? AND {dose_meta['grain_col']} IN ({placeholders}) "
+        f"AND {dose_meta['time_col']} BETWEEN ? AND ? "
+        f"GROUP BY {dose_meta['grain_col']}, {dose_meta['time_col']} ORDER BY {dose_meta['grain_col']}, {dose_meta['time_col']}"
+    )
+    dose_params = [region, *channels, time_lo, time_hi]
+
+    revenue_meta = DIM_REGISTRY["product_category"]  # pos_transactions/gross_revenue, same table+column the revenue KPI is built from
+    revenue_sql = (
+        f"SELECT {revenue_meta['time_col']} AS period, SUM({revenue_meta['value_col']}) AS value "
+        f"FROM {revenue_meta['table']} WHERE {revenue_meta['region_col']} = ? AND {revenue_meta['time_col']} BETWEEN ? AND ? "
+        f"GROUP BY {revenue_meta['time_col']} ORDER BY {revenue_meta['time_col']}"
+    )
+    revenue_params = [region, time_lo, time_hi]
+
+    return {
+        "dose_sql": dose_sql,
+        "dose_params": dose_params,
+        "dose_sql_hash": sql_hash(dose_sql, dose_params),
+        "revenue_sql": revenue_sql,
+        "revenue_params": revenue_params,
+        "revenue_sql_hash": sql_hash(revenue_sql, revenue_params),
+    }
 
 
 def _month_range(lo: str, hi: str) -> list[str]:
@@ -346,6 +414,7 @@ def compile_predicate(
     if predicate.test_archetype == "precedence":
         raise PredicateRejected("precedence predicates are not SQL-compiled -- see evaluate_precedence()")
 
+    check_domain_entitlement(role, predicate.outcome.metric, contract)
     check_entitlement(role, region, predicate.treatment.dim, contract)
 
     time_col = DIM_REGISTRY[predicate.treatment.dim]["time_col"]
@@ -453,6 +522,35 @@ PREDICATE_FIXTURES: list[dict] = [
 # SQL. Its fixture lives in engine/l3_hypothesise.py alongside the ticket
 # topic series it depends on.
 
+# marketing_spend_cut (h_marketing_spend_cut) is a dose_response predicate
+# -- the archetype was defined in the Predicate schema from the start but,
+# per GAPS.md item 3, never actually exercised by any fixture or L5 code
+# path until now. Not compiled through compile_predicate/fetch_unit_panel
+# (those are placebo/specificity-shaped: one outcome column, one table);
+# dose_response pulls its DOSE (per-channel marketing spend) and its
+# OUTCOME (regional revenue) from two different tables and asks whether
+# they move together across strata, which is evaluate_dose_response_test()
+# in engine/l5_adjudicate.py. treatment and control both list every
+# channel deliberately -- dose_response has no binary treated/untreated
+# split the way placebo/specificity do, so both fields hold the full
+# stratification set the compiler validates them against (same-dim check
+# still applies and is trivially satisfied).
+MARKETING_CHANNELS = ["Search", "Social", "Display", "Email"]  # see data/generate_synthetic_data.py CHANNELS
+
+MARKETING_DOSE_RESPONSE_FIXTURE: dict = {
+    "hypothesis_id": "h_marketing_spend_cut",
+    "mechanism": "A cut in marketing spend, sized differently per channel, reduced West revenue in proportion to the size of the cut on each channel.",
+    "test_archetype": "dose_response",
+    "treatment": {"dim": "channel", "in": MARKETING_CHANNELS},
+    "control": {"dim": "channel", "in": MARKETING_CHANNELS},
+    "outcome": {"metric": "revenue", "expect": "decline"},
+    "temporal": {"cause_onset": "2025-08-04", "kpi_onset": "2025-08-11"},
+    "refutes_if": {
+        "condition": "no significant monotone rank relationship between per-channel spend change and regional revenue change across strata (Spearman p >= alpha), and the test had power to detect a real one",
+        "rationale": "If revenue declined the same amount everywhere regardless of how much a given channel's spend moved, the decline isn't a dose-response effect of marketing spend -- it's something else acting uniformly.",
+    },
+}
+
 
 def main() -> None:
     contract = yaml.safe_load(CONTRACT_PATH.read_text())
@@ -475,10 +573,18 @@ def main() -> None:
         except EntitlementDenied as e:
             print(f"{predicate.hypothesis_id:<22} {predicate.test_archetype:<12} {'DENIED':<10}  {e.reason}")
 
-    print("\nEntitlement scenario: regional_vp requesting rep-level detail")
+    print("\nEntitlement scenario: regional_vp requesting rep-level detail (column-level)")
     try:
         rep_predicate = validate_predicate(PREDICATE_FIXTURES[3])
         compile_predicate(rep_predicate, region, role="regional_vp", contract=contract, windows=windows)
+        print("  ALLOWED (unexpected)")
+    except EntitlementDenied as e:
+        print(f"  DENIED: {e.reason}")
+
+    print("\nDomain scenario: marketing_analyst compiling any revenue-outcome predicate (domain-level, not row/column)")
+    try:
+        rev_predicate = validate_predicate(PREDICATE_FIXTURES[0])
+        compile_predicate(rev_predicate, region, role="marketing_analyst", contract=contract, windows=windows)
         print("  ALLOWED (unexpected)")
     except EntitlementDenied as e:
         print(f"  DENIED: {e.reason}")

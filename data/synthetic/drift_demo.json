@@ -1,0 +1,16 @@
+{
+  "label": "SIMULATED DEMONSTRATION -- not written to the live ledger",
+  "honesty_note": "The live ledger doesn't have 5+ real prior run snapshots yet (see assess_drift()'s insufficient_history status). This demonstrates the PSI mechanism is correct using a clearly labeled synthetic run history: a stable baseline, a 'current' run drawn from the same distribution (reads STABLE below), and a 'current' run with a deliberate shift in both posterior confidence and effect size (reads SIGNIFICANT_DRIFT below) -- both branches shown, not just the favorable one.",
+  "control_case_same_distribution": {
+    "posterior_psi": 0.0,
+    "posterior_verdict": "STABLE",
+    "effect_size_psi": 0.0,
+    "effect_size_verdict": "STABLE"
+  },
+  "drift_case_shifted_distribution": {
+    "posterior_psi": 4.6052,
+    "posterior_verdict": "SIGNIFICANT_DRIFT",
+    "effect_size_psi": 8.5174,
+    "effect_size_verdict": "SIGNIFICANT_DRIFT"
+  }
+}

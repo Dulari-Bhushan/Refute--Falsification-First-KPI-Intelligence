@@ -30,11 +30,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from engine.l4_compiler import EntitlementDenied, check_entitlement
+from engine.l4_compiler import EntitlementDenied, check_domain_entitlement, check_entitlement
 from engine.l5_adjudicate import adjudicate_all
 from engine.l6_narrate_ledger import build_action_recommendation, build_counterfactual_projection, detect_contradictory_verdicts, get_ledger, submit_feedback
 from engine.methods_registry import REGISTRY, assert_llm_not_quantitative_source
 from engine.calibration import run_calibration_demo
+from engine.drift_monitor import assess_drift, run_drift_demo
 
 ROOT = Path(__file__).parent.parent
 DATA_DIR = ROOT / "data" / "synthetic"
@@ -100,10 +101,27 @@ def kpi_series(region: str = "West", kpi: str = "revenue"):
 
 
 @app.get("/api/l1-summary")
-def l1_summary():
+def l1_summary(role: str | None = None):
     """Every KPI x region L1 was run against -- including the ones that
-    stayed noise (no LLM call made) and the sparse-history Outdoor demo."""
-    return _read_json("l1_signal_results.json")
+    stayed noise (no LLM call made) and the sparse-history Outdoor demo.
+    With `role` given, rows are filtered by REAL domain-level entitlement
+    (engine.l4_compiler.check_domain_entitlement), not a client-side
+    guess: a role denied the 'hr' domain (e.g. regional_vp) never sees
+    rep_attributed_revenue's row at all, aggregate or not -- this is the
+    row/column scope can't catch (see GAPS.md item 2)."""
+    rows = _read_json("l1_signal_results.json")
+    if role is None:
+        return rows
+    contract = _contract()
+    visible = []
+    for r in rows:
+        kpi_name = r["kpi"].split(" ")[0]  # "new_category_revenue (Outdoor)" -> "new_category_revenue"
+        try:
+            check_domain_entitlement(role, kpi_name, contract)
+            visible.append(r)
+        except EntitlementDenied:
+            continue
+    return visible
 
 
 @app.get("/api/hypotheses")
@@ -174,6 +192,22 @@ def entitlement_check(role: str, dim: str, region: str = "West"):
         raise HTTPException(400, str(e)) from e
 
 
+@app.get("/api/domain-check")
+def domain_check(role: str, kpi: str = "revenue"):
+    """The domain-level counterpart to /api/entitlement-check -- a real
+    access-control decision (engine.l4_compiler.check_domain_entitlement),
+    not a client-side guess. Distinct mechanism from row/column scope: this
+    can deny a whole KPI outright (e.g. marketing_analyst on 'revenue',
+    regional_vp on 'rep_attributed_revenue') regardless of region or
+    dimension requested."""
+    contract = _contract()
+    try:
+        check_domain_entitlement(role, kpi, contract)
+        return {"allowed": True, "reason": None}
+    except EntitlementDenied as e:
+        return {"allowed": False, "reason": str(e)}
+
+
 @app.get("/api/entitlements")
 def entitlements():
     return _contract()["entitlements"]
@@ -228,6 +262,27 @@ def calibration_demo_endpoint():
     why this is honest and the live ledger's real entries aren't faked
     into a fake history instead."""
     return run_calibration_demo()
+
+
+@app.get("/api/drift")
+def drift_endpoint():
+    """GAPS.md item 1: model/data drift monitoring. Real assessment
+    (engine.drift_monitor.assess_drift) against this ledger's own run
+    history when >=5 prior run snapshots exist; otherwise an honest
+    insufficient_history status plus a clearly labeled simulated
+    demonstration (run_drift_demo) proving the PSI mechanism itself works
+    -- same honesty pattern as /api/calibration-demo."""
+    ledger_path = DATA_DIR / "ledger.sqlite"
+    demo = run_drift_demo()
+    if not ledger_path.exists():
+        return {"real": {"status": "insufficient_history", "n_baseline_runs": 0, "runs_needed": 5, "explanation": "No ledger yet -- run the pipeline first."}, "demo": demo}
+    conn = sqlite3.connect(ledger_path)
+    conn.row_factory = sqlite3.Row
+    latest = conn.execute("SELECT run_id FROM run_snapshots ORDER BY id DESC LIMIT 1").fetchone()
+    conn.row_factory = None
+    real = assess_drift(conn, latest["run_id"]) if latest is not None else {"status": "insufficient_history", "n_baseline_runs": 0, "runs_needed": 5, "explanation": "No run snapshots recorded yet -- run the pipeline first."}
+    conn.close()
+    return {"real": real, "demo": demo}
 
 
 @app.get("/api/adversarial-challenges")

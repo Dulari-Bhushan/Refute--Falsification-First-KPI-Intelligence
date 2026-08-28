@@ -37,11 +37,13 @@ import numpy as np
 import pandas as pd
 import statsmodels.formula.api as smf
 import yaml
+from scipy.stats import norm, spearmanr
 from statsmodels.stats.multitest import multipletests
 from statsmodels.stats.power import TTestIndPower
 
 from engine.l4_compiler import (
     PREDICATE_FIXTURES,
+    compile_dose_response_queries,
     fetch_unit_panel,
     load_database,
     validate_predicate,
@@ -55,11 +57,13 @@ POWER_TARGET = 0.8
 FDR_Q = 0.10
 PARALLEL_TRENDS_ALPHA = 0.10
 PLAUSIBLE_EFFECT_FRACTION = 0.10  # a "business-meaningful" effect is defined as >=10% of the treatment group's own pre-period mean -- see compute_power_gate docstring
+PLAUSIBLE_RHO = 0.5  # Cohen's (1988) "large" convention for a correlation coefficient -- the floor for a dose-response relationship worth calling business-meaningful, not a value tuned to produce a particular verdict; see evaluate_dose_response_test
 
 WINDOWS = {
     "week": ((26, 30), (32, 36)),
     "month": (("2025-06", "2025-07"), ("2025-08", "2025-09")),
 }
+DOSE_RESPONSE_WINDOW = ((28, 30), (32, 34))  # (pre_lo, pre_hi), (post_lo, post_hi), weekly grain -- matches l4_compiler.main()'s own weekly window
 
 
 @dataclass
@@ -368,6 +372,130 @@ def evaluate_precedence_test(hypothesis_id: str, topic_tau: int, topic_confidenc
     )
 
 
+def dose_response_mde(n: int, alpha: float = ALPHA, power: float = POWER_TARGET) -> float:
+    """Minimum detectable |rho| at the given alpha/power for a rank-
+    correlation test with n strata, via the standard Fisher z-transform
+    power formula for a correlation coefficient (Cohen 1988): solving
+    n = ((z_alpha/2 + z_power) / atanh(rho))^2 + 3 for rho. Same "what
+    could this test actually have detected" question compute_power_gate
+    answers for the DiD tests, applied to a correlation statistic instead
+    of a two-sample mean difference -- the same power-gate discipline
+    extended to the one archetype (dose_response) that previously had no
+    implementation at all (GAPS.md item 3)."""
+    if n <= 3:
+        return float("inf")
+    z_alpha = norm.ppf(1 - alpha / 2)
+    z_power = norm.ppf(power)
+    return float(np.tanh((z_alpha + z_power) / np.sqrt(n - 3)))
+
+
+def evaluate_dose_response_test(predicate_raw: dict, regions: tuple[str, ...] = ("West", "East", "Central")) -> TestOutcome:
+    """The formal falsification test for a "dose_response" archetype
+    predicate -- kills the hypothesis unless per-channel marketing-spend
+    change shows a significant, positively-signed monotone (Spearman rank)
+    relationship with regional revenue change across (region, channel)
+    strata. Not folded into the SQL-backed placebo/specificity family's
+    Benjamini-Hochberg correction below: a rank-correlation p-value isn't
+    the same statistic as a DiD interaction p-value, so pooling it into
+    that family wouldn't be statistically meaningful -- the same reasoning
+    evaluate_precedence_test uses for excluding itself.
+
+    Unit of analysis is (region, channel): each channel's own pre/post
+    spend % change is the dose; the OUTCOME is that channel's *region's*
+    overall revenue % change (marketing_spend has no channel-level
+    attribution inside pos_transactions itself, so the region's aggregate
+    revenue change is repeated across its own four channels) -- a
+    stratified-by-region design, not a claim that revenue is somehow
+    channel-decomposed. With the real synthetic data (marketing spend
+    deliberately generated as flat/on-plan noise, see
+    data/generate_synthetic_data.py's generate_marketing_spend docstring),
+    this should correctly find no dose-response relationship and KILL the
+    hypothesis, not because the test is rigged to fail it but because
+    nothing in the data generator ever made spend a real driver."""
+    predicate = validate_predicate(predicate_raw)
+    conn = load_database()
+    (pre_lo, pre_hi), (post_lo, post_hi) = DOSE_RESPONSE_WINDOW
+
+    doses: list[float] = []
+    outcomes_pct: list[float] = []
+    strata: list[str] = []
+    dose_hashes: list[str] = []
+    revenue_hashes: list[str] = []
+
+    for region in regions:
+        compiled = compile_dose_response_queries(region, predicate.treatment.in_, pre_lo, post_hi)
+        dose_df = pd.read_sql_query(compiled["dose_sql"], conn, params=compiled["dose_params"])
+        revenue_df = pd.read_sql_query(compiled["revenue_sql"], conn, params=compiled["revenue_params"])
+        dose_hashes.append(compiled["dose_sql_hash"])
+        revenue_hashes.append(compiled["revenue_sql_hash"])
+
+        rev_pre = revenue_df[revenue_df.period.between(pre_lo, pre_hi)]["value"].mean()
+        rev_post = revenue_df[revenue_df.period.between(post_lo, post_hi)]["value"].mean()
+        if pd.isna(rev_pre) or rev_pre == 0:
+            continue
+        region_outcome_pct = (rev_post - rev_pre) / rev_pre
+
+        for channel in predicate.treatment.in_:
+            ch = dose_df[dose_df.channel == channel]
+            ch_pre = ch[ch.period.between(pre_lo, pre_hi)]["value"].mean()
+            ch_post = ch[ch.period.between(post_lo, post_hi)]["value"].mean()
+            if pd.isna(ch_pre) or ch_pre == 0:
+                continue
+            doses.append(float((ch_post - ch_pre) / ch_pre))
+            outcomes_pct.append(float(region_outcome_pct))
+            strata.append(f"{region}:{channel}")
+
+    n = len(doses)
+    outcome = TestOutcome(
+        hypothesis_id=predicate.hypothesis_id,
+        test_archetype="dose_response",
+        dim="channel",
+        n_treatment_units=n,
+        n_control_units=0,
+        did_effect=None,
+        did_se=None,
+        did_pvalue_raw=None,
+        treatment_sql_hash=",".join(dose_hashes),
+        control_sql_hash=",".join(revenue_hashes),
+    )
+
+    if n < 6:
+        outcome.verdict = "INCONCLUSIVE"
+        outcome.reason = f"Only {n} (region, channel) strata available -- too few to run a rank-correlation test meaningfully."
+        return outcome
+
+    rho, p_value = spearmanr(doses, outcomes_pct)
+    mde_rho = dose_response_mde(n)
+    outcome.did_effect = round(float(rho), 4)
+    outcome.did_pvalue_raw = round(float(p_value), 4)
+    outcome.mde = round(mde_rho, 4) if mde_rho != float("inf") else None
+    outcome.plausible_effect = PLAUSIBLE_RHO
+    outcome.notes.append(f"strata (region:channel): {', '.join(strata)}")
+    outcome.notes.append(f"dose (spend %chg): {[round(d, 3) for d in doses]}; outcome (revenue %chg): {[round(o, 3) for o in outcomes_pct]}")
+
+    if p_value < ALPHA and rho > 0:
+        outcome.verdict = "SURVIVED"
+        outcome.reason = (
+            f"Spearman rho={rho:.2f} (p={p_value:.4f}) across {n} strata -- channels/regions with bigger spend "
+            "changes show proportionally bigger revenue changes, consistent with the predicted dose-response mechanism."
+        )
+    elif mde_rho > PLAUSIBLE_RHO:
+        outcome.verdict = "INCONCLUSIVE"
+        outcome.reason = (
+            f"Not a significant positive monotone relationship (rho={rho:.2f}, p={p_value:.4f}), and with only {n} strata "
+            f"this test could only reliably detect |rho| >= {mde_rho:.2f} -- underpowered, not evidence the effect is absent. "
+            f"Would need more regions/channels of history to resolve."
+        )
+    else:
+        outcome.verdict = "KILLED"
+        outcome.reason = (
+            f"Not a significant positive monotone relationship (rho={rho:.2f}, p={p_value:.4f}), and the test had power to "
+            f"detect |rho| >= {mde_rho:.2f} (Cohen's 'large' convention) if a real dose-response effect existed."
+        )
+
+    return outcome
+
+
 TOPIC_MIN_CONFIDENCE_FOR_PRECEDENCE = 0.6
 
 
@@ -391,6 +519,10 @@ def main() -> None:
                     kpi_confidence=west_revenue["changepoint_posterior_recent"],
                 )
             )
+
+    from engine.l4_compiler import MARKETING_DOSE_RESPONSE_FIXTURE
+
+    outcomes.append(evaluate_dose_response_test(MARKETING_DOSE_RESPONSE_FIXTURE))
 
     (DATA_DIR / "l5_verdicts.json").write_text(json.dumps([o.__dict__ for o in outcomes], indent=2))
 

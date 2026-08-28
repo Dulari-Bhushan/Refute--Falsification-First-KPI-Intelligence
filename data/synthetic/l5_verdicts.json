@@ -118,5 +118,30 @@
     "control_sql_hash": null,
     "treatment_sql": null,
     "control_sql": null
+  },
+  {
+    "hypothesis_id": "h_marketing_spend_cut",
+    "test_archetype": "dose_response",
+    "dim": "channel",
+    "n_treatment_units": 12,
+    "n_control_units": 0,
+    "did_effect": -0.1478,
+    "did_se": null,
+    "did_pvalue_raw": 0.6466,
+    "did_pvalue_bh": null,
+    "parallel_trends_pvalue": null,
+    "parallel_trends_ok": null,
+    "mde": 0.7324,
+    "plausible_effect": 0.5,
+    "verdict": "INCONCLUSIVE",
+    "reason": "Not a significant positive monotone relationship (rho=-0.15, p=0.6466), and with only 12 strata this test could only reliably detect |rho| >= 0.73 -- underpowered, not evidence the effect is absent. Would need more regions/channels of history to resolve.",
+    "notes": [
+      "strata (region:channel): West:Search, West:Social, West:Display, West:Email, East:Search, East:Social, East:Display, East:Email, Central:Search, Central:Social, Central:Display, Central:Email",
+      "dose (spend %chg): [0.1, -0.052, 0.021, 0.047, 0.141, 0.055, 0.11, 0.006, 0.046, -0.027, -0.075, 0.071]; outcome (revenue %chg): [-0.126, -0.126, -0.126, -0.126, -0.07, -0.07, -0.07, -0.07, -0.033, -0.033, -0.033, -0.033]"
+    ],
+    "treatment_sql_hash": "9826e27054b2526c,1964ad9b7acd493e,20ecb697a712bf9f",
+    "control_sql_hash": "11f3ef1d40af6650,ba8390c483df9ef9,1cacf7e8bd076004",
+    "treatment_sql": null,
+    "control_sql": null
   }
 ]
