@@ -8,9 +8,38 @@ in a docstring or YAML field. Written 2026-08-28.
 Status legend: ✅ done and verified in code · ⚠️ partially done, real limit stated below · ❌ not
 implemented at all.
 
+**Update (2026-08-28, same day):** the top 3 priority items are closed. See "Priority order to
+close" at the bottom for what's still open (items 4-7 are unchanged).
+
+- **Model/data drift (item 9)** — [`engine/drift_monitor.py`](engine/drift_monitor.py) (new
+  module). Real PSI-based assessment against this ledger's own accumulated run history
+  (`run_snapshots` table, wired into `engine/l6_narrate_ledger.py`'s `main()`), honestly reporting
+  `insufficient_history` below 5 prior runs rather than a hollow number — same pattern
+  `engine/calibration.py` uses. `run_drift_demo()` proves the PSI mechanism itself is correct
+  against a clearly labeled simulated run history. Exposed at `/api/drift` and rendered in the UI's
+  new "Model/Data Drift Monitoring" panel.
+- **Domain-level security (item 8)** — enforced for real now, not just declared.
+  `kpis.<name>.domain` added to every KPI in the contract; `domain_scope` added to every role
+  (including a new `marketing_analyst` role built specifically to demonstrate the mechanism is
+  distinct from row/column scope — it's denied the `sales` domain outright, so it can't compile
+  *any* predicate with `revenue` as the outcome, regardless of region). `check_domain_entitlement()`
+  in `engine/l4_compiler.py`, called at every compile-time entry point
+  (`compile_predicate`/`fetch_unit_panel`) and filtering `/api/l1-summary` by role. `regional_vp`
+  requesting `rep_attributed_revenue` is now denied at the domain level (previously only the
+  `rep_id` *dimension* was gated — the KPI's aggregate trend was visible regardless).
+- **Marketing as a real hypothesis + the unused `dose_response` archetype (item 1 + the archetype
+  finding)** — `h_marketing_spend_cut` in `engine/l4_compiler.py` (`MARKETING_DOSE_RESPONSE_FIXTURE`)
+  is a real `dose_response` predicate, adjudicated by `evaluate_dose_response_test()` in
+  `engine/l5_adjudicate.py`: Spearman rank correlation between per-(region,channel) marketing-spend
+  change and regional revenue change, with its own MDE-equivalent power gate (Fisher z-transform,
+  Cohen 1988). Run for real against the synthetic data, it returns **INCONCLUSIVE** (rho=-0.15,
+  p=0.65, underpowered at n=12 strata) — an honest result, not a rigged KILLED, and arguably a
+  stronger demo than a clean kill since it shows the power gate applies uniformly across
+  archetypes, not just the DiD-based ones.
+
 ---
 
-## 1. Multiple interacting drivers (price, volume, mix, marketing, supply, seasonality, competition, external events) — ⚠️
+## 1. Multiple interacting drivers (price, volume, mix, marketing, supply, seasonality, competition, external events) — ⚠️ (marketing now ✅, see update above)
 
 - Price/volume/mix: ✅ exact decomposition, [`engine/l2_localise.py`](engine/l2_localise.py).
 - Supply: ✅ `h_shipping_delay` decoy, correctly killed via placebo.
@@ -18,10 +47,13 @@ implemented at all.
 - Seasonality: ✅ *deliberately* out of scope, not silently skipped — [`engine/l1_signal.py:14-21`](engine/l1_signal.py#L14)
   explains the 40-week analysis window is under one annual cycle, so there's no fittable STL
   seasonal period at this grain. A real, stated engineering judgment.
-- Marketing: ⚠️ `marketing_attributed_revenue_share` is a real KPI in
+- Marketing: ✅ (was ⚠️) `marketing_attributed_revenue_share` is a real KPI in
   [`semantic/kpi_contract.yaml`](semantic/kpi_contract.yaml) that L1's BOCPD gate genuinely
-  monitors — but it is never wired as a *candidate cause* hypothesis in L3/L4. Nothing tests
-  "did a marketing spend cut cause the revenue drop." Observed, not falsification-tested.
+  monitors, AND it's now a real *candidate cause* hypothesis too: `h_marketing_spend_cut`
+  (`dose_response` archetype, `evaluate_dose_response_test()` in
+  [`engine/l5_adjudicate.py`](engine/l5_adjudicate.py)) actually tests "did a marketing spend cut
+  cause the revenue drop" via Spearman rank correlation across (region, channel) strata — returns
+  INCONCLUSIVE for real (rho=-0.15, underpowered at n=12), not a rigged verdict.
 - External events: ❌ no planted scenario (macro shock, weather, etc.) and no explicit category
   for it — in principle any L3 topic cluster could surface one, but nothing demonstrates it.
 
@@ -72,15 +104,18 @@ the contract) — both checked, not just one asserted.
 - Delivery channels: ❌ none. Everything is the single web dashboard — no email/Slack/multi-channel
   variation exists anywhere in the code.
 
-## 8. Row-, column- and domain-level security, sensitive-data protection, auditability — ⚠️
+## 8. Row-, column- and domain-level security, sensitive-data protection, auditability — ⚠️ (domain-level now ✅, see update above)
 
 - Row-level (region): ✅ enforced at compile time, `check_entitlement()` in
   [`engine/l4_compiler.py:152`](engine/l4_compiler.py#L152).
 - Column-level (`rep_detail_restricted`): ✅ enforced the same way.
-- Domain-level: ❌ **declared but not enforced.** The contract sets `access_tags` per KPI, but no
-  code path anywhere reads that field — confirmed by grep. It's schema decoration, not a real
-  check. This is the sharpest gap in the whole audit: the semantic contract claims a security
-  dimension the code doesn't actually check.
+- Domain-level: ✅ (was ❌ **declared but not enforced**). `kpis.<name>.domain` and
+  `entitlements.<role>.domain_scope` are now real contract fields, and
+  `check_domain_entitlement()` in [`engine/l4_compiler.py`](engine/l4_compiler.py) enforces them at
+  every compile-time entry point plus `/api/l1-summary`'s row filtering. `regional_vp` requesting
+  `rep_attributed_revenue` (any grain, not just the `rep_id` dimension) is now genuinely denied;
+  the new `marketing_analyst` role demonstrates the strictest case (denied the `sales` domain
+  outright, so it can't compile any predicate against `revenue` regardless of region).
 - Sensitive-data protection: ✅ the strongest real case is rep-level HR/compensation data gated by
   column scope.
 - Auditability: ⚠️ the ledger is a genuine immutable record of *what was tested and how* (verdict +
@@ -89,19 +124,19 @@ the contract) — both checked, not just one asserted.
   tried to access what and was denied" is not. (Feedback events do record `analyst_role`, so that
   slice is real.)
 
-## 9. Model and data drift, feedback capture, continuous evaluation — ❌ (drift), ✅ (feedback)
+## 9. Model and data drift, feedback capture, continuous evaluation — ✅ (was ❌ drift / ✅ feedback, see update above)
 
 - Feedback capture: ✅ real — `submit_feedback()` re-runs a correction through the identical
   L4/L5 pipeline and (after a real bug fix documented in README §0) correctly writes the
   counter-verdict to the ledger, not just the feedback log.
 - Continuous evaluation groundwork: ✅ calibration machinery exists, honestly gated on needing
   real outcomes to accrue.
-- Model/data drift: ❌ **zero implementation.** The only "drift" hits in the codebase are
-  unrelated — a comment about docs staying in sync with code, and the planted KPI *definition*
-  drift scenario, which is a one-time discrepancy, not drift-over-time. Nothing monitors whether
-  L1's changepoint posteriors, L4's LLM predicate-acceptance rate, or effect-size estimates are
-  degrading/shifting as new data arrives. This is the single most complete gap on the list —
-  explicitly named by the brief, and currently 0% covered.
+- Model/data drift: ✅ (was ❌ **zero implementation**). [`engine/drift_monitor.py`](engine/drift_monitor.py)
+  now tracks L1 changepoint posteriors and L5 DiD effect sizes/MDEs per run (`run_snapshots`
+  table), compares the current run against pooled prior-run history via Population Stability Index
+  (Siddiqi 2006), and honestly reports `insufficient_history` below 5 prior runs instead of a
+  hollow number. `run_drift_demo()` proves the PSI mechanism itself is correct against a labeled
+  simulated run history.
 
 ## 10. LLM economics: model choice, token consumption, latency, caching, cost per insight — ⚠️
 
@@ -117,10 +152,9 @@ the contract) — both checked, not just one asserted.
 
 ## Other findings from the audit (not on the brief's list, but relevant)
 
-- **`dose_response` archetype is defined but never exercised.** It's a valid `Literal` value in
-  the `Predicate` schema ([`engine/l4_compiler.py:96`](engine/l4_compiler.py#L96)) and is
-  mentioned in docstrings as one of four archetypes, but no fixture uses it and L5 has no code
-  path that adjudicates it. The spec calls for four archetypes; only three actually run.
+- ~~**`dose_response` archetype is defined but never exercised.**~~ **Fixed** — see the marketing
+  update above. All four archetypes named in the spec now have a real fixture and a real L5 code
+  path.
 - REFUTE also does several things **not asked for by this list at all**, worth keeping in mind
   when judges compare coverage: the Popperian `refutes_if` hard constraint, MDE/power gating so a
   null result can't be laundered as evidence of absence, Benjamini-Hochberg correction across the
@@ -131,18 +165,16 @@ the contract) — both checked, not just one asserted.
 
 ## Priority order to close
 
-1. **Model/data drift** (item 9) — named explicitly, 0% covered. Highest-value gap to close.
-2. **Domain-level security** (item 8) — either enforce `access_tags` for real or remove it from
-   the contract; right now it's a claim the code doesn't back up, which cuts against this
-   project's own honesty ethos.
-3. **Marketing as a real candidate hypothesis** (item 1) — using the currently-unused
-   `dose_response` archetype closes two gaps at once (marketing-as-driver, unused archetype).
-4. Missing-data-rate metric in `data/reconciliation.py`'s freshness output (item 6).
+1. ~~**Model/data drift** (item 9)~~ — **done**, see update at the top.
+2. ~~**Domain-level security** (item 8)~~ — **done**, see update at the top.
+3. ~~**Marketing as a real candidate hypothesis** (item 1)~~ — **done**, see update at the top.
+4. Missing-data-rate metric in `data/reconciliation.py`'s freshness output (item 6). *Open.*
 5. Persist entitlement ALLOWED/DENIED decisions into the ledger, not just console output (item 8,
-   auditability half).
-6. A real LLM predicate-generation cache keyed on topic-cluster identity (item 10).
+   auditability half). *Open.*
+6. A real LLM predicate-generation cache keyed on topic-cluster identity (item 10). *Open.*
 7. One stub delivery-channel beyond the dashboard, even a simulated "would post to Slack" call
-   (item 7).
+   (item 7). *Open.*
 
-Items 1-3 are being implemented now (see git log / README §0 for status once done). Items 4-7
-remain open.
+Items 1-3 are closed as of this update. Items 4-7 remain open and are lower-value/lower-effort
+than the first three — none of them is named as explicitly by the brief, and none had a 0%-covered
+starting point the way drift did.

@@ -385,6 +385,64 @@ function renderCalibration(report) {
   `;
 }
 
+// ---------------------------------------------------------------- drift monitoring
+function renderDrift(data) {
+  const el = document.getElementById("driftContent");
+  const { real, demo } = data;
+  document.getElementById("driftHonesty").textContent =
+    real.status === "assessed"
+      ? `Real assessment against ${real.n_baseline_runs} prior run(s) in this ledger.`
+      : demo.honesty_note;
+
+  const verdictColor = (v) => (v === "STABLE" ? "var(--survived)" : v === "SIGNIFICANT_DRIFT" ? "var(--killed)" : "var(--inconclusive)");
+
+  let realHtml;
+  if (real.status === "assessed") {
+    const rows = real.metrics
+      .map((m) => `<tr><td>${m.metric}</td><td>${m.baseline_n}</td><td>${m.current_n}</td><td>${m.baseline_mean ?? "n/a"}</td><td>${m.current_mean ?? "n/a"}</td><td>${m.psi ?? "n/a"}</td><td style="color:${verdictColor(m.verdict)}">${m.verdict}</td></tr>`)
+      .join("");
+    realHtml = `<div class="subtext" style="margin-bottom:8px">Overall: <strong style="color:${verdictColor(real.overall_verdict)}">${real.overall_verdict}</strong></div>
+      <table class="evidence-table"><thead><tr><th>Metric</th><th>Baseline n</th><th>Current n</th><th>Baseline mean</th><th>Current mean</th><th>PSI</th><th>Verdict</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } else {
+    realHtml = `<div class="subtext">insufficient_history &mdash; ${real.n_baseline_runs} prior run(s), needs ${real.runs_needed ?? 5} more. Run the pipeline a few more times (<code>uv run python -m engine.l6_narrate_ledger</code>) to accrue real history.</div>`;
+  }
+
+  const demoRow = (label, d) => `<tr><td>${label}</td><td>${d.posterior_psi}</td><td style="color:${verdictColor(d.posterior_verdict)}">${d.posterior_verdict}</td><td>${d.effect_size_psi}</td><td style="color:${verdictColor(d.effect_size_verdict)}">${d.effect_size_verdict}</td></tr>`;
+  el.innerHTML = `
+    ${realHtml}
+    <p class="subtext" style="margin-top:14px"><strong>${demo.label}</strong> &mdash; proves the PSI mechanism itself is correct:</p>
+    <table class="evidence-table">
+      <thead><tr><th>Case</th><th>Posterior PSI</th><th>Verdict</th><th>Effect-size PSI</th><th>Verdict</th></tr></thead>
+      <tbody>
+        ${demoRow("Control (current == baseline)", demo.control_case_same_distribution)}
+        ${demoRow("Drift (current is shifted)", demo.drift_case_shifted_distribution)}
+      </tbody>
+    </table>
+  `;
+}
+
+// ---------------------------------------------------------------- domain-level security check
+async function renderDomainCheck() {
+  const el = document.getElementById("domainCheckContent");
+  const scenarios = [
+    { role: "ops_manager_west", kpi: "revenue" },
+    { role: "ops_manager_west", kpi: "rep_attributed_revenue" },
+    { role: "regional_vp", kpi: "revenue" },
+    { role: "regional_vp", kpi: "rep_attributed_revenue" },
+    { role: "marketing_analyst", kpi: "marketing_attributed_revenue_share" },
+    { role: "marketing_analyst", kpi: "revenue" },
+    { role: "platform_engineer", kpi: "rep_attributed_revenue" },
+  ];
+  const results = await Promise.all(scenarios.map((s) => getJSON(`/api/domain-check?role=${s.role}&kpi=${s.kpi}`)));
+  const rows = scenarios
+    .map((s, i) => {
+      const r = results[i];
+      return `<tr><td>${s.role}</td><td>${s.kpi}</td><td style="color:${r.allowed ? "var(--survived)" : "var(--killed)"}">${r.allowed ? "ALLOWED" : "DENIED"}</td><td class="subtext">${r.reason || "&mdash;"}</td></tr>`;
+    })
+    .join("");
+  el.innerHTML = `<table class="evidence-table"><thead><tr><th>Role</th><th>KPI requested</th><th>Result</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 // ---------------------------------------------------------------- adversarial challenge
 function renderAdversarial(data) {
   const panel = document.getElementById("adversarialPanel");
@@ -410,7 +468,7 @@ function renderAdversarial(data) {
 
 // ---------------------------------------------------------------- init
 async function init() {
-  const [kpi, hypData, action, evidence, telemetry, methods, counterfactual, adversarial, priorities, contradictions, calibration] = await Promise.all([
+  const [kpi, hypData, action, evidence, telemetry, methods, counterfactual, adversarial, priorities, contradictions, calibration, drift] = await Promise.all([
     getJSON(`/api/kpi-series?region=${STATE.region}&kpi=revenue`),
     getJSON("/api/hypotheses"),
     getJSON("/api/action-recommendation"),
@@ -422,6 +480,7 @@ async function init() {
     getJSON("/api/priorities"),
     getJSON("/api/contradictions"),
     getJSON("/api/calibration-demo"),
+    getJSON("/api/drift"),
   ]);
 
   document.getElementById("kpiValue").textContent = fmtPct(kpi.business_impact_pct);
@@ -461,6 +520,8 @@ async function init() {
   renderPriorities(priorities);
   renderContradiction(contradictions);
   renderCalibration(calibration);
+  renderDrift(drift);
+  renderDomainCheck();
 
   await renderBrief(STATE.role);
 

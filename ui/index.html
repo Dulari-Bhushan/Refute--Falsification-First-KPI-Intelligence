@@ -104,6 +104,18 @@
     <div id="calibrationContent" class="loading">Loading&hellip;</div>
   </div>
 
+  <div class="panel">
+    <h2>Model/Data Drift Monitoring</h2>
+    <p class="subtext" id="driftHonesty"></p>
+    <div id="driftContent" class="loading">Loading&hellip;</div>
+  </div>
+
+  <div class="panel">
+    <h2>Domain-Level Security Check</h2>
+    <p class="subtext">Distinct from row (region) and column (rep-detail) scope above: this denies a whole KPI outright, aggregate or not, regardless of region or dimension &mdash; a real access-control decision (<code>engine.l4_compiler.check_domain_entitlement</code>).</p>
+    <div id="domainCheckContent" class="loading">Loading&hellip;</div>
+  </div>
+
 </main>
 
 <script src="app.js"></script>

@@ -104,6 +104,15 @@ CREATE TABLE IF NOT EXISTS feedback (
     counter_verdict TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS run_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    l1_posteriors_json TEXT,
+    l1_gate_pass_rate REAL,
+    did_effects_json TEXT,
+    did_mdes_json TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -541,10 +550,10 @@ def main() -> None:
     # L1/L3 output on disk; reuse that same logic here so the ledger gets
     # the full five-hypothesis picture in one run.
     l1_path, l3_path = DATA_DIR / "l1_signal_results.json", DATA_DIR / "l3_topic_candidates.json"
+    l1_results = json.loads(l1_path.read_text()) if l1_path.exists() else []
     if l1_path.exists() and l3_path.exists():
         from engine.l5_adjudicate import evaluate_precedence_test
 
-        l1_results = json.loads(l1_path.read_text())
         west_revenue = next(r for r in l1_results if r["kpi"] == "revenue" and r["region"] == "West")
         l3_candidates = json.loads(l3_path.read_text())
         billing_cluster = next((c for c in l3_candidates if "account" in " ".join(c["top_terms"]).lower()), None)
@@ -559,6 +568,17 @@ def main() -> None:
                         kpi_confidence=west_revenue["changepoint_posterior_recent"],
                     )
                 )
+
+    # h_marketing_spend_cut's dose_response test (see l5_adjudicate.
+    # evaluate_dose_response_test) -- GAPS.md items 1 and 3: marketing spend
+    # wired as a real, tested candidate hypothesis (not just an observed
+    # KPI), using the dose_response archetype that previously had no
+    # implementation at all.
+    from engine.l4_compiler import MARKETING_DOSE_RESPONSE_FIXTURE
+    from engine.l5_adjudicate import evaluate_dose_response_test
+
+    with telemetry_span(ledger, run_id, "L5_dose_response_test", is_llm_call=False):
+        outcomes.append(evaluate_dose_response_test(MARKETING_DOSE_RESPONSE_FIXTURE))
 
     write_ledger_entries(ledger, run_id, outcomes)
 
@@ -600,6 +620,20 @@ def main() -> None:
         "This run's entries are stored with scored_outcome='uncalibrated' rather than displaying a confident hit-rate "
         "number they haven't earned."
     )
+
+    # --- model/data drift monitoring (GAPS.md item 1) ---
+    from engine.drift_monitor import assess_drift, record_run_snapshot
+
+    record_run_snapshot(ledger, run_id, l1_results, outcomes)
+    drift = assess_drift(ledger, run_id)
+    print("\n=== Model/data drift monitoring ===")
+    if drift["status"] == "insufficient_history":
+        print(f"insufficient_history -- {drift['n_baseline_runs']} prior run snapshot(s), needs >= {drift['n_baseline_runs'] + drift['runs_needed']}.")
+        print(drift["explanation"])
+    else:
+        print(f"overall: {drift['overall_verdict']} (against {drift['n_baseline_runs']} prior run(s))")
+        for m in drift["metrics"]:
+            print(f"  {m['metric']:<26} psi={m['psi']}  baseline_mean={m['baseline_mean']}  current_mean={m['current_mean']}  {m['verdict']}")
 
     # --- feedback loop demo: an analyst rejects the SURVIVED verdict ---
     print("\n=== Feedback loop demo ===")
