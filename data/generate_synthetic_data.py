@@ -32,6 +32,7 @@ reconciliation layer.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -296,8 +297,13 @@ def generate_crm_headcount(pos_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def rng_accounts(rep_id: str) -> int:
-    # deterministic small account-book size per rep, just for narrative color
-    return 8 + (hash(rep_id) % 6)
+    # deterministic small account-book size per rep, just for narrative
+    # color -- uses hashlib, not the builtin hash(), because Python
+    # randomizes str hash() per-process by default (hash-flooding
+    # protection), which silently broke the "same seed -> same dataset"
+    # guarantee for this one column between runs.
+    digest = hashlib.sha256(rep_id.encode()).digest()
+    return 8 + (digest[0] % 6)
 
 
 def generate_finance_gl_extract(pos_df: pd.DataFrame) -> pd.DataFrame:

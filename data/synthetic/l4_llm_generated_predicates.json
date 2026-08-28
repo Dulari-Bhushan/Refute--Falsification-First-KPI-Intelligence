@@ -1,0 +1,141 @@
+[
+  {
+    "cluster_id": 1,
+    "top_terms": [
+      "accessories",
+      "pricing",
+      "asked",
+      "customer asked",
+      "customer",
+      "asked bulk"
+    ],
+    "accepted": true,
+    "predicate": {
+      "hypothesis_id": "h_ticket_support_accessories_pricing",
+      "mechanism": "The introduction of pricing issues related to accessories led to customer pushback, causing decreased sales in the West region.",
+      "test_archetype": "specificity",
+      "treatment": {
+        "dim": "product_category",
+        "in": [
+          "Accessories"
+        ]
+      },
+      "control": {
+        "dim": "product_category",
+        "in": [
+          "Electronics",
+          "Home",
+          "Apparel"
+        ]
+      },
+      "outcome": {
+        "metric": "revenue",
+        "expect": "decline"
+      },
+      "temporal": {
+        "cause_onset": "2023-07-01",
+        "kpi_onset": "2023-08-01"
+      },
+      "refutes_if": {
+        "condition": "In the Accessories category, revenue does not decline starting week 32.",
+        "rationale": "If revenue in the Accessories category does not decline, it would suggest that the pricing issues did not impact this specific product line, contradicting the proposed mechanism."
+      }
+    },
+    "reason": "Accepted on attempt 1.",
+    "prompt_tokens": 580,
+    "completion_tokens": 213,
+    "latency_ms": 9746.694700006628
+  },
+  {
+    "cluster_id": 5,
+    "top_terms": [
+      "competitor",
+      "new",
+      "launch",
+      "product",
+      "competitor new",
+      "competitor product"
+    ],
+    "accepted": true,
+    "predicate": {
+      "hypothesis_id": "h_support_ticket_cluster_effect",
+      "mechanism": "The increase in competitor activity and product launches coincided with a decrease in customer interest in the region's products, leading to a decline in revenue.",
+      "test_archetype": "specificity",
+      "treatment": {
+        "dim": "product_category",
+        "in": [
+          "Electronics",
+          "Home"
+        ]
+      },
+      "control": {
+        "dim": "product_category",
+        "in": [
+          "Accessories"
+        ]
+      },
+      "outcome": {
+        "metric": "revenue",
+        "expect": "decline"
+      },
+      "temporal": {
+        "cause_onset": "2023-07-31",
+        "kpi_onset": "2023-08-31"
+      },
+      "refutes_if": {
+        "condition": "Revenue in the Electronics and Home product categories does not decline starting week 32",
+        "rationale": "If revenue in the specified product categories does not decline, it would contradict the mechanism that the increased competitor activity and product launches led to a decrease in customer interest in those categories."
+      }
+    },
+    "reason": "Accepted on attempt 3.",
+    "prompt_tokens": 580,
+    "completion_tokens": 220,
+    "latency_ms": 8840.800000005402
+  },
+  {
+    "cluster_id": 6,
+    "top_terms": [
+      "west",
+      "carrier",
+      "west_dc",
+      "delivery",
+      "region",
+      "week"
+    ],
+    "accepted": true,
+    "predicate": {
+      "hypothesis_id": "h_support_ticket_delivery_delay",
+      "mechanism": "The delay in order shipments from the WEST_DC fulfillment center, reported in the support tickets, likely caused a decline in revenue in the WEST region due to delayed deliveries.",
+      "test_archetype": "specificity",
+      "treatment": {
+        "dim": "fulfillment_center",
+        "in": [
+          "WEST_DC"
+        ]
+      },
+      "control": {
+        "dim": "fulfillment_center",
+        "in": [
+          "EAST_DC",
+          "CENTRAL_DC"
+        ]
+      },
+      "outcome": {
+        "metric": "revenue",
+        "expect": "decline"
+      },
+      "temporal": {
+        "cause_onset": "2023-02-28",
+        "kpi_onset": "2023-03-31"
+      },
+      "refutes_if": {
+        "condition": "The revenue in the WEST region shows an increase or remains stable during week 32 and subsequent weeks.",
+        "rationale": "If the revenue in the WEST region does not decline or shows an increase, it would contradict the proposed mechanism that the support tickets' reported delays in shipments from the WEST_DC fulfillment center led to a decline in revenue."
+      }
+    },
+    "reason": "Accepted on attempt 1.",
+    "prompt_tokens": 583,
+    "completion_tokens": 243,
+    "latency_ms": 10388.681600015843
+  }
+]

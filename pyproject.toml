@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Falsification-first KPI intelligence-to-action engine"
 requires-python = ">=3.12"
 dependencies = [
+    "accelerate>=1.14.0",
     "numpy>=2.5.2",
+    "outlines>=1.3.3",
     "pandas>=3.0.5",
     "pydantic>=2.13.4",
     "pyyaml>=6.0.3",
@@ -13,4 +15,19 @@ dependencies = [
     "sentence-transformers>=6.0.0",
     "sqlglot>=30.17.0",
     "statsmodels>=0.15.0",
+    "transformers>=5.16.1",
+    "torch>=2.11.0",
+    "triton-windows>=3.7.1.post27",
 ]
+
+# Pin torch to the CUDA 12.8 wheel index permanently -- without this, `uv
+# add`/`uv sync` silently resolves torch back to the default CPU-only
+# wheel on Windows (there is no CUDA build on PyPI itself), undoing a
+# manual `uv pip install` the next time the environment is synced.
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

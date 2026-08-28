@@ -10,13 +10,12 @@ This README captures the accumulated context from Round 1 (accepted concept) and
 
 ## 0. Implementation status (updated 2026-08-28)
 
-**The core falsification engine (L1–L6) is built and validated end-to-end against planted ground truth.** Run it yourself:
+**The full engine (L1–L6, plus live LLM predicate generation) is built and validated end-to-end against planted ground truth.** Run it yourself:
 
 ```bash
-uv run python run_pipeline.py
+uv run python run_pipeline.py               # templated path: all six layers, no LLM calls, a few seconds
+uv run python run_pipeline.py --with-llm    # + live local-GPU LLM predicate generation (needs CUDA; downloads ~6GB on first run)
 ```
-
-This regenerates the synthetic dataset, reconciles it, and runs all six layers in order — no live LLM calls anywhere in this path (see below). Takes a few seconds.
 
 ### What's working
 
@@ -31,6 +30,7 @@ This regenerates the synthetic dataset, reconciles it, and runs all six layers i
 | L4 Compiler | [engine/l4_compiler.py](engine/l4_compiler.py) | Pydantic predicate schema with hard-validated `refutes_if`, whitelisted parameterized SQL compiler, compile-time entitlement checks |
 | L5 Adjudicate | [engine/l5_adjudicate.py](engine/l5_adjudicate.py) | DiD (log-scale, unit fixed effects, cluster-robust → HC1 fallback below 4 clusters/side), mandatory parallel-trends check, the power gate, BH-FDR correction |
 | L6 Narrate + Ledger | [engine/l6_narrate_ledger.py](engine/l6_narrate_ledger.py) | Structured action template, persona rendering (2 roles, entitlement-filtered), SQLite ledger, telemetry, feedback-as-falsification-event |
+| L4 Live LLM generation | [engine/l4_llm_generation.py](engine/l4_llm_generation.py) | Local GPU (Qwen2.5-3B-Instruct via `outlines`, token-level schema-constrained decoding), two-gate validation (schema + semantic domain), graceful fallback, real telemetry |
 
 ### The canonical worked example, actually running
 
@@ -46,6 +46,14 @@ West revenue fell **-8.9%** in week 32 (L1 gate: PASS, posterior 0.79 — East/C
 
 This is the exact three-way split (obvious decoys killed / underpowered decoy inconclusive / true cause survives) that §8's evaluation targets call the most important thing to get right — and it's now real, not aspirational.
 
+### Live LLM predicate generation, also actually running
+
+`engine/l4_llm_generation.py` loads Qwen2.5-3B-Instruct locally on GPU (no API key, no hosted cost) and uses `outlines` to constrain its output to the exact same `Predicate` Pydantic schema the templated fixtures use — token-level constrained decoding, not "ask for JSON and retry." A second gate (`validate_semantics`) checks the model's chosen dimension values actually exist in the data and the archetype is one the compiler implements; either gate failing means the predicate is rejected and the templated fixtures remain the fallback, never a guess.
+
+The evidence this works isn't "it produced valid JSON" — it's convergence: given the accessories/pricing support-ticket cluster, the model independently proposes treatment=Accessories vs. control=[Electronics, Home, Apparel] on `product_category` — the *exact structure* of the hand-written `h_accessories_pricing` fixture — and that independently-generated predicate reaches the identical **INCONCLUSIVE** verdict through L5's adjudication. The other two candidate clusters converge on the same treatment/control structure as `h_shipping_delay` and correctly come back **KILLED**. A smaller model (Qwen2.5-1.5B-Instruct) was tried first and reliably passed both validation gates but chose weaker dimensions and mislabeled every archetype as "precedence" — a genuine, documented finding about model-size requirements for this task, not swept under the rug (see the module docstring).
+
+Runtime cost for this run is genuinely **$0** (local GPU compute) — the ledger also computes what an equivalent hosted-API call would have cost, for comparison, without pretending that's what this run actually spent.
+
 ### Real bugs found and fixed along the way (not silently patched)
 
 Documented in the code where they were found, since they're the kind of thing worth a reader knowing about:
@@ -55,10 +63,12 @@ Documented in the code where they were found, since they're the kind of thing wo
 - Raw-dollar-level DiD regression was spuriously significant for the two "obvious" decoys purely from cross-group scale differences (one fulfillment center is 4x the size of the others) — fixed via log-transform + unit fixed effects.
 - Pooling residual variance across treatment *and* control diluted the underpowered decoy's genuinely higher relative noise — fixed by computing the power-gate noise from the treatment group's own within-unit deviation only.
 - A feedback-loop counter-hypothesis was silently defaulting to INCONCLUSIVE via a failed lookup, not genuine adjudication — fixed by making `adjudicate_all()` accept ad-hoc predicates instead of only the static fixture list.
+- On Windows, `uv add`/`uv sync` silently resolves `torch` back to the CPU-only wheel (there is no CUDA build on PyPI itself) even after a manual `uv pip install` of the CUDA build — fixed by pinning `torch` to the PyTorch CUDA wheel index permanently via `[tool.uv.sources]` in `pyproject.toml`.
+- `outlines`' underlying kernel tried to `torch.compile` itself and silently fell back to eager mode because Triton isn't installed on Windows by default — harmless, but added a 330-second one-time warmup per process. Installing `triton-windows` dropped that to ~6 seconds.
+- A telemetry span was timing an empty `with ...: pass` block instead of the LLM call that happened before it opened, recording near-zero latency for real 8-10 second generations — fixed by threading the already-measured latency through instead of re-timing nothing.
 
 ### What's NOT built yet
 
-- **Live LLM calls.** Everything above runs on the templated/deterministic path — hand-written predicate fixtures, not LLM-generated ones. Per the original risk-mitigation plan, this was deliberate: prove the compiler/adjudication/ledger machinery correct on known-good predicates before wiring in generation. L3's *candidate discovery* (embeddings, clustering, BOCPD) is real and already running; what's missing is an LLM call turning a topic cluster into a novel causal-mechanism predicate, with the Pydantic schema as a constrained-decoding/validation gate and fallback to the templated fixtures on failure.
 - **UI.** No FastAPI backend or frontend yet — everything above is driven by `run_pipeline.py` and reads/writes JSON + SQLite in `data/synthetic/`.
 - **Reconciliation-as-falsification for row/column security beyond the one entitlement demo.** The role-based scenario works (`regional_vp` denied rep-level detail, `ops_manager_west` allowed) but only two roles/one denial path are wired up.
 - **Ledger calibration.** Brier score / reliability diagram / isotonic recalibration code isn't written yet — needs ~30 scored outcomes to be meaningful anyway (honesty note already printed by `l6_narrate_ledger.py`).
@@ -258,7 +268,7 @@ The Round 2 brief expands the ask beyond what the Round 1 architecture explicitl
 
 **Superseded by [§0](#0-implementation-status-updated-2026-08-28) above** — the gap list this section originally pointed to has been built and validated (see §0's table and worked-example results). This section is kept for history; the live plan is the one at `.claude/plans/so-tell-me-what-federated-brook.md` (see that file's own updated status/next-step sections), and the actionable next-step list is:
 
-1. **Live LLM wiring** for L3's mechanism proposal and L4's predicate generation, with the Pydantic schema as the constrained-decoding/validation gate and fallback to the templated fixtures already proven correct in this build.
-2. **Minimal UI** (FastAPI + a small frontend) — the demo footage target from the original plan: KPI series with changepoint markers → hypothesis cards (struck through / surviving) → narrated brief in both personas → evidence panel → telemetry/cost strip → live entitlement-denial example → feedback-rejection example. Everything it needs to render already exists as JSON/SQLite output from `run_pipeline.py`.
-3. **Tier 3 stretch features** (visible counterfactual projection, adversarial counter-hypothesis generation) — only after 1–2 are demo-solid, per the original plan's own sequencing.
+1. ~~Live LLM wiring~~ — **done**, see [§0's live-LLM section](#live-llm-predicate-generation-also-actually-running) above (`engine/l4_llm_generation.py`, Qwen2.5-3B-Instruct on local GPU via `outlines`).
+2. **Minimal UI** (FastAPI + a small frontend) — the demo footage target from the original plan: KPI series with changepoint markers → hypothesis cards (struck through / surviving) → narrated brief in both personas → evidence panel → telemetry/cost strip → live entitlement-denial example → feedback-rejection example. Everything it needs to render already exists as JSON/SQLite output from `run_pipeline.py`. This is now the top of the list.
+3. **Tier 3 stretch features** (visible counterfactual projection, adversarial counter-hypothesis generation) — only after 2 is demo-solid, per the original plan's own sequencing.
 4. Ledger calibration scoring (Brier score, reliability diagram) once real scored outcomes accrue — not before, per the honesty constraint already enforced in `l6_narrate_ledger.py`.
