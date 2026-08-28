@@ -80,6 +80,10 @@ class TestOutcome:
     verdict: str = "PENDING"
     reason: str = ""
     notes: list[str] = field(default_factory=list)
+    treatment_sql_hash: str | None = None
+    control_sql_hash: str | None = None
+    treatment_sql: str | None = None
+    control_sql: str | None = None
 
 
 MIN_CLUSTERS_PER_SIDE = 4
@@ -236,6 +240,10 @@ def adjudicate_all(role: str = "ops_manager_west", region: str = "West", predica
             did_effect=None,
             did_se=None,
             did_pvalue_raw=None,
+            treatment_sql_hash=panel.attrs.get("treatment_sql_hash"),
+            control_sql_hash=panel.attrs.get("control_sql_hash"),
+            treatment_sql=panel.attrs.get("treatment_sql"),
+            control_sql=panel.attrs.get("control_sql"),
         )
 
         pt_p, pt_ok, pt_note = parallel_trends_check(panel)

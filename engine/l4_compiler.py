@@ -253,6 +253,20 @@ def fetch_unit_panel(conn: sqlite3.Connection, predicate: "Predicate", region: s
     control = pd.read_sql_query(c_sql, conn, params=c_params)
     control["treat"] = 0
 
+    # traceability: every verdict downstream needs to be traceable back to
+    # the EXACT query that produced its evidence, not just "we ran some
+    # SQL somewhere" -- same predicate -> same query -> same hash, every
+    # time, so a human (or the Engineer persona view) can recompute this
+    # hash from the predicate alone and confirm nothing was tampered with.
+    panel_attrs_sql = {
+        "treatment_sql": t_sql,
+        "treatment_params": t_params,
+        "treatment_sql_hash": sql_hash(t_sql, t_params),
+        "control_sql": c_sql,
+        "control_params": c_params,
+        "control_sql_hash": sql_hash(c_sql, c_params),
+    }
+
     panel = pd.concat([treatment, control], ignore_index=True)
     if time_col == "week":
         pre_values = set(range(pre_window[0], pre_window[1] + 1))
@@ -270,6 +284,7 @@ def fetch_unit_panel(conn: sqlite3.Connection, predicate: "Predicate", region: s
     panel.attrs["pre_window"] = pre_window
     panel.attrs["post_window"] = post_window
     panel.attrs["time_col"] = time_col
+    panel.attrs.update(panel_attrs_sql)
     return panel
 
 

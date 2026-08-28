@@ -1,0 +1,48 @@
+[
+  {
+    "kpi": "rep_attributed_revenue",
+    "region": "West",
+    "priority_score": 13054.4,
+    "business_impact_abs_usd": -14682.71,
+    "business_impact_pct": -0.5977,
+    "changepoint_posterior_recent": 0.8891,
+    "changepoint_period_estimate": 9,
+    "period_unit": "month",
+    "changepoint_week": 37,
+    "narrative": "rep_attributed_revenue in West: material movement detected (changepoint posterior=0.89, business impact=-59.8%). Proceeding to root-cause analysis.",
+    "rank": 1,
+    "likely_same_event_as": []
+  },
+  {
+    "kpi": "revenue",
+    "region": "West",
+    "priority_score": 3464.55,
+    "business_impact_abs_usd": -4401.66,
+    "business_impact_pct": -0.0894,
+    "changepoint_posterior_recent": 0.7871,
+    "changepoint_period_estimate": 32,
+    "period_unit": "week",
+    "changepoint_week": 32,
+    "narrative": "revenue in West: material movement detected (changepoint posterior=0.79, business impact=-8.9%). Proceeding to root-cause analysis.",
+    "rank": 2,
+    "likely_same_event_as": [
+      "units_sold"
+    ]
+  },
+  {
+    "kpi": "units_sold",
+    "region": "West",
+    "priority_score": 47.49,
+    "business_impact_abs_usd": -56.58,
+    "business_impact_pct": -0.0778,
+    "changepoint_posterior_recent": 0.8393,
+    "changepoint_period_estimate": 33,
+    "period_unit": "week",
+    "changepoint_week": 33,
+    "narrative": "units_sold in West: material movement detected (changepoint posterior=0.84, business impact=-7.8%). Proceeding to root-cause analysis.",
+    "rank": 3,
+    "likely_same_event_as": [
+      "revenue"
+    ]
+  }
+]

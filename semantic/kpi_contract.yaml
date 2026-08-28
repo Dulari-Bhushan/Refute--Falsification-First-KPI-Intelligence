@@ -141,6 +141,20 @@ kpis:
       - "pos_transactions.gross_revenue -> weekly region x category aggregate, categories under the maturity bar only"
     access_tags: [region_scoped]
 
+# Operational constraints -- objective 6 asks for actions "grounded in
+# business levers, constraints and decision rights". A lever with no
+# feasibility check attached (can the team actually DO this?) isn't
+# grounded in a real constraint, it's just a suggestion. These numbers are
+# read directly against crm_headcount.assigned_accounts by
+# engine/l6_narrate_ledger.py's check_capacity_constraint() -- the
+# recommended action is downgraded to a phased/escalated version, with the
+# exact shortfall stated, when it doesn't fit.
+operational_constraints:
+  max_accounts_per_rep:
+    value: 20
+    rationale: "A conventional B2B account-management capacity benchmark -- a rep juggling meaningfully more than this stops being able to give each account real attention. Used as the ceiling when checking whether existing staff can absorb a departed rep's book without escalation."
+    applies_to: rep_attributed_revenue
+
 # Roles referenced by the L4 entitlement compiler (see engine/l4_compiler.py).
 # Row-level: region scope. Column-level: rep-level detail visibility.
 # Deny-by-default — a role sees nothing outside what is explicitly granted here.

@@ -17,7 +17,11 @@
     "reason": "Not significant (BH-adjusted p=0.4776), and the test had enough power to detect a plausible effect (MDE 8.0pp <= plausible 10pp) if one existed.",
     "notes": [
       "Pre-trends look parallel."
-    ]
+    ],
+    "treatment_sql_hash": "2efa0dc4ba6cdb14",
+    "control_sql_hash": "a445b8599bb19a8d",
+    "treatment_sql": "SELECT fulfillment_center AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND fulfillment_center IN (?) AND week BETWEEN ? AND ? GROUP BY fulfillment_center, week ORDER BY fulfillment_center, week",
+    "control_sql": "SELECT fulfillment_center AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND fulfillment_center IN (?,?) AND week BETWEEN ? AND ? GROUP BY fulfillment_center, week ORDER BY fulfillment_center, week"
   },
   {
     "hypothesis_id": "h_competitor_launch",
@@ -37,7 +41,11 @@
     "reason": "Not significant (BH-adjusted p=0.5347), and the test had enough power to detect a plausible effect (MDE 8.0pp <= plausible 10pp) if one existed.",
     "notes": [
       "Pre-trends look parallel."
-    ]
+    ],
+    "treatment_sql_hash": "6caddac4ce53f9c6",
+    "control_sql_hash": "cca93e21d9697754",
+    "treatment_sql": "SELECT product_category AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND product_category IN (?) AND week BETWEEN ? AND ? GROUP BY product_category, week ORDER BY product_category, week",
+    "control_sql": "SELECT product_category AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND product_category IN (?,?,?) AND week BETWEEN ? AND ? GROUP BY product_category, week ORDER BY product_category, week"
   },
   {
     "hypothesis_id": "h_accessories_pricing",
@@ -57,7 +65,11 @@
     "reason": "Not significant (BH-adjusted p=0.5347), and this test's minimum detectable effect (28.0pp) exceeds the plausible effect size (10pp) -- the test was underpowered, not evidence the effect is absent. Would need more weeks of history or more treatment units to resolve.",
     "notes": [
       "Pre-trends look parallel."
-    ]
+    ],
+    "treatment_sql_hash": "bcd4d37175b6430b",
+    "control_sql_hash": "4013d33cc762d8c5",
+    "treatment_sql": "SELECT product_category AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND product_category IN (?) AND week BETWEEN ? AND ? GROUP BY product_category, week ORDER BY product_category, week",
+    "control_sql": "SELECT product_category AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND product_category IN (?,?,?) AND week BETWEEN ? AND ? GROUP BY product_category, week ORDER BY product_category, week"
   },
   {
     "hypothesis_id": "h_rep_attrition",
@@ -77,7 +89,11 @@
     "reason": "BH-adjusted p=0.0000 < q=0.1; treatment moved 300.0pp more than control beyond the pre-period baseline difference -- consistent with the predicted mechanism.",
     "notes": [
       "Pre-trends look parallel."
-    ]
+    ],
+    "treatment_sql_hash": "c098a6e038d7fd15",
+    "control_sql_hash": "ddbc3c0ce417b2b6",
+    "treatment_sql": "SELECT rep_id AS unit, month AS period, SUM(rep_attributed_revenue_usd) AS value FROM crm_headcount WHERE region = ? AND rep_id IN (?,?,?,?) AND month BETWEEN ? AND ? GROUP BY rep_id, month ORDER BY rep_id, month",
+    "control_sql": "SELECT rep_id AS unit, month AS period, SUM(rep_attributed_revenue_usd) AS value FROM crm_headcount WHERE region = ? AND rep_id IN (?,?) AND month BETWEEN ? AND ? GROUP BY rep_id, month ORDER BY rep_id, month"
   },
   {
     "hypothesis_id": "h_billing_complaints",
@@ -97,6 +113,10 @@
     "reason": "Candidate cause's own changepoint (week 33) comes AFTER the KPI's onset (week 32) -- this is a downstream symptom, not a cause. refutes_if condition met: effect precedes cause.",
     "notes": [
       "topic_changepoint_week=33 (confidence=0.86); kpi_changepoint_week=32 (confidence=0.79)"
-    ]
+    ],
+    "treatment_sql_hash": null,
+    "control_sql_hash": null,
+    "treatment_sql": null,
+    "control_sql": null
   }
 ]

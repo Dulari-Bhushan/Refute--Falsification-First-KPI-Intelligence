@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -307,6 +308,73 @@ def run_l1_for_series(
     )
 
 
+def _to_calendar_week(result: "L1Result", week1_start) -> int:
+    """changepoint_period_estimate is an index into the KPI's OWN series --
+    for a weekly KPI that IS a calendar week, but for a monthly KPI (e.g.
+    rep_attributed_revenue) it's a 1-indexed month number (1=Jan 2025),
+    which is not directly comparable to a week number at all. Converts to
+    an approximate calendar week (using the 15th of the matching month) so
+    cross-cadence movements can be fairly ranked and grouped instead of
+    naively comparing "week 32" to "month 9" as if they were the same axis."""
+    if result.period_unit == "week":
+        return result.changepoint_period_estimate
+    month_index = result.changepoint_period_estimate
+    year = 2025 + (month_index - 1) // 12
+    month = ((month_index - 1) % 12) + 1
+    approx_date = date(year, month, 15)
+    return (approx_date - week1_start).days // 7 + 1
+
+
+def prioritize_material_movements(results: list[L1Result], week1_start: date) -> list[dict]:
+    """Objective 1's second half -- "detects AND PRIORITISES". Detection is
+    the gate; this is the ranking step, which has real work to do even in
+    this prototype's own data: revenue, units_sold, and rep_attributed_revenue
+    for West/week 32 all independently clear the gate simultaneously. Without
+    a priority order, an analyst would get three separate "material movement"
+    alerts and have to work out by hand that they're the same story, not
+    three problems.
+
+    Priority score = business-impact magnitude x statistical confidence --
+    both numbers L1 already computed, combined rather than a new signal
+    invented for ranking's sake. Movements sharing a region and an onset
+    week within 2 weeks of each other are flagged as likely-the-same-event,
+    so the analyst sees "investigate this one, the other two are probably
+    downstream of it" rather than three flat, undifferentiated alerts."""
+    passing = [r for r in results if r.gate_passed]
+    scored = []
+    for r in passing:
+        priority_score = abs(r.business_impact_abs_usd) * r.changepoint_posterior_recent
+        scored.append(
+            {
+                "kpi": r.kpi,
+                "region": r.region,
+                "priority_score": round(priority_score, 2),
+                "business_impact_abs_usd": r.business_impact_abs_usd,
+                "business_impact_pct": r.business_impact_pct,
+                "changepoint_posterior_recent": r.changepoint_posterior_recent,
+                "changepoint_period_estimate": r.changepoint_period_estimate,
+                "period_unit": r.period_unit,
+                "changepoint_week": _to_calendar_week(r, week1_start),  # normalized to calendar week even for monthly-cadence KPIs, so cross-cadence movements are comparable
+                "narrative": r.narrative,
+            }
+        )
+    scored.sort(key=lambda x: x["priority_score"], reverse=True)
+    for rank, item in enumerate(scored, start=1):
+        item["rank"] = rank
+
+    # group movements that are likely the same underlying event: same
+    # region, changepoint weeks within 2 of each other
+    for item in scored:
+        item["likely_same_event_as"] = [
+            other["kpi"]
+            for other in scored
+            if other is not item
+            and other["region"] == item["region"]
+            and abs(other["changepoint_week"] - item["changepoint_week"]) <= 2
+        ]
+    return scored
+
+
 def main() -> None:
     contract = yaml.safe_load(CONTRACT_PATH.read_text())
     panel = pd.read_csv(DATA_DIR / "reconciled_weekly.csv")
@@ -354,10 +422,19 @@ def main() -> None:
     out = [r.__dict__ for r in results]
     (DATA_DIR / "l1_signal_results.json").write_text(json.dumps(out, indent=2))
 
+    week1_start = date.fromisoformat(contract["analysis_calendar"]["week1_start"])
+    priorities = prioritize_material_movements(results, week1_start)
+    (DATA_DIR / "l1_priorities.json").write_text(json.dumps(priorities, indent=2))
+
     print(f"{'kpi':<38} {'region':<8} {'n':>3} {'cp_post':>8} {'impact%':>9} {'gate':>6}  narrative")
     for r in results:
         flag = "SPARSE" if r.sparse_history else ("PASS" if r.gate_passed else "noise")
         print(f"{r.kpi:<38} {r.region:<8} {r.n_observations:>3} {r.changepoint_posterior_recent:>8.3f} {r.business_impact_pct:>+8.1%} {flag:>6}  {r.narrative}")
+
+    print(f"\n{len(priorities)} material movement(s) passed the gate -- priority order:")
+    for p in priorities:
+        same_event = f" (likely same event as: {', '.join(p['likely_same_event_as'])})" if p["likely_same_event_as"] else ""
+        print(f"  #{p['rank']} {p['kpi']} ({p['region']}, week {p['changepoint_week']}): impact ${p['business_impact_abs_usd']:+,.0f} ({p['business_impact_pct']:+.1%}), confidence {p['changepoint_posterior_recent']:.2f}{same_event}")
 
 
 if __name__ == "__main__":

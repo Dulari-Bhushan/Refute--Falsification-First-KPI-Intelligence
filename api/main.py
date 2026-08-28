@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 
 from engine.l4_compiler import EntitlementDenied, check_entitlement
 from engine.l5_adjudicate import adjudicate_all
-from engine.l6_narrate_ledger import build_action_recommendation, build_counterfactual_projection, submit_feedback
+from engine.l6_narrate_ledger import build_action_recommendation, build_counterfactual_projection, detect_contradictory_verdicts, get_ledger, submit_feedback
 from engine.methods_registry import REGISTRY, assert_llm_not_quantitative_source
 
 ROOT = Path(__file__).parent.parent
@@ -53,6 +53,28 @@ def _read_json(name: str) -> dict | list:
 
 def _contract() -> dict:
     return yaml.safe_load(CONTRACT_PATH.read_text())
+
+
+@app.get("/api/priorities")
+def priorities():
+    """Objective 1's second half: which of the currently-material movements
+    should an analyst look at first, and which are probably the same
+    underlying event as another one on the list."""
+    return _read_json("l1_priorities.json")
+
+
+@app.get("/api/contradictions")
+def contradictions():
+    """Objective 5's second clause: currently-SURVIVED verdicts, checked
+    for whether any two are contradictory (independent evidence pointing
+    different directions) vs. just a re-test of the same evidence."""
+    ledger_path = DATA_DIR / "ledger.sqlite"
+    if not ledger_path.exists():
+        return {"contradiction": None}
+    conn = get_ledger()
+    result = detect_contradictory_verdicts(conn)
+    conn.close()
+    return {"contradiction": result}
 
 
 @app.get("/api/kpi-series")
@@ -114,7 +136,7 @@ def action_recommendation():
     survived = next((o for o in outcomes if o.verdict == "SURVIVED"), None)
     if survived is None:
         return {"has_action": False}
-    return {"has_action": True, "hypothesis_id": survived.hypothesis_id, "action": build_action_recommendation(l2, survived)}
+    return {"has_action": True, "hypothesis_id": survived.hypothesis_id, "action": build_action_recommendation(l2, survived, _contract())}
 
 
 @app.get("/api/telemetry")
@@ -158,14 +180,15 @@ def entitlements():
 
 @app.post("/api/feedback")
 def feedback(original_hypothesis_id: str, analyst_role: str, correction_text: str, counter_predicate: dict):
-    ledger_path = DATA_DIR / "ledger.sqlite"
-    conn = sqlite3.connect(ledger_path)
-    conn.executescript(
-        "CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT, original_hypothesis_id TEXT, "
-        "original_verdict TEXT, analyst_role TEXT, correction_text TEXT, counter_hypothesis_id TEXT, counter_verdict TEXT, created_at TEXT)"
-    )
+    # get_ledger() (not a hand-rolled CREATE TABLE) so this endpoint gets
+    # the full schema + migrations every other write path gets -- a
+    # feedback submission through the UI shouldn't risk landing in a
+    # ledger table that's missing columns another path already relies on.
+    conn = get_ledger()
     result = submit_feedback(conn, "ui-session", original_hypothesis_id, analyst_role, correction_text, counter_predicate)
+    contradiction = detect_contradictory_verdicts(conn, hypothesis_ids=[original_hypothesis_id, result.get("counter_hypothesis_id")])
     conn.close()
+    result["contradiction"] = contradiction
     return result
 
 
