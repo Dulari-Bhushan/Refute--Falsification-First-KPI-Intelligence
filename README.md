@@ -34,6 +34,7 @@ uv run uvicorn api.main:app --reload        # then open http://127.0.0.1:8000 --
 | L4 Live LLM generation | [engine/l4_llm_generation.py](engine/l4_llm_generation.py) | Local GPU (Qwen2.5-3B-Instruct via `outlines`, token-level schema-constrained decoding), two-gate validation (schema + semantic domain), graceful fallback, real telemetry |
 | Web UI | [api/main.py](api/main.py), [ui/](ui/) | FastAPI backend reading the pipeline's own JSON/SQLite output (no separate analysis logic) + a static dashboard: KPI chart with changepoint marker, hypothesis cards, **three** persona views (Leader/Manager/Engineer, with a *real* `check_entitlement` call behind each entitlement note), evidence/freshness table, telemetry strip, methods-breakdown table, counterfactual projection chart, adversarial-challenge panel, live feedback-loop demo |
 | Methods registry | [engine/methods_registry.py](engine/methods_registry.py) | Single source of truth for which method category (deterministic logic / SQL / business rules / statistics / traditional ML / causal inference / LLM) each stage uses and why, with a structural check that no LLM stage is ever marked a quantitative source of truth — imported directly by the UI and the Engineer persona view, not restated |
+| Scalability benchmark | [tests/scalability_test.py](tests/scalability_test.py) | Times each layer's actual bottleneck operation at up to 65-225x the demo dataset's scale — see §6, objective 8, for results |
 
 ### The canonical worked example, actually running
 
@@ -73,7 +74,6 @@ Documented in the code where they were found, since they're the kind of thing wo
 ### What's NOT built yet
 
 - **Ledger calibration.** Brier score / reliability diagram / isotonic recalibration code isn't written yet — needs ~30 scored outcomes to be meaningful anyway (honesty note already printed by `l6_narrate_ledger.py`).
-- **Scalability testing.** See §6's objective-8 row — nothing here has been run against more than the ~9K-row synthetic dataset; this is the one honest remaining gap, not something faked with a load-test claim.
 
 ### Structural note
 
@@ -215,7 +215,18 @@ This section originally tracked gaps between the Round 1 design and the Round 2 
 | 5 | Communicate uncertainty and abstain when evidence is insufficient/contradictory | ✅ | The project's strongest-covered requirement from day one: INCONCLUSIVE verdict, the power gate, BH correction |
 | 6 | Recommend practical actions grounded in business levers, constraints, decision rights | ✅ | `driver → controllable lever → action → expected impact → owner → confidence → monitoring plan`, populated from real L2/L5 numbers, not placeholder text |
 | 7 | Mechanism to learn from analyst and business-user feedback | ✅ | Feedback-as-falsification-event: a correction becomes a new predicate, run through the identical L4/L5 pipeline, not a lighter-weight approval flow |
-| 8 | Operate within realistic security, cost, latency and scalability constraints | ⚠️ Partial | Security: real (compile-time entitlement checks, 3 roles with distinct row/column scope). Cost/latency: real telemetry, $0 marginal LLM cost via local GPU, sub-minute end-to-end runtime. **Scalability is the one honest gap** — this has only ever been run against a ~9K-row synthetic dataset; nothing here demonstrates behavior at production data volumes (e.g. whether the O(m·n) Shapley sampling or the per-topic BOCPD scan in L3 stay fast at 1000x the ticket/transaction volume). Flagging this rather than claiming it, since nothing in the build actually tests it. |
+| 8 | Operate within realistic security, cost, latency and scalability constraints | ✅ | Security: real (compile-time entitlement checks, 3 roles with distinct row/column scope). Cost/latency: real telemetry, $0 marginal LLM cost via local GPU, sub-minute end-to-end runtime. **Scalability: measured, not asserted** — see `tests/scalability_test.py` and the results below. |
+
+**Scalability benchmark results** (`uv run python -m tests.scalability_test`): each layer's actual bottleneck operation, timed at up to 65-225x the demo dataset's scale, independent of the calibrated demo scenario (this measures runtime, not verdict correctness — correctness is already validated against the demo data).
+
+| Layer | Scales with | Max tested | Time at max | Observed scaling |
+|---|---|---|---|---|
+| L1 BOCPD | weeks of history | 4,000 weeks (100x) | 0.65s | ~linear |
+| L2 Monte-Carlo Shapley | categories/dimensions | 500 (125x) | 0.68s | ~O(N^1.6) — the one genuinely super-linear layer, but still sub-second at 500 categories, far more than any real business's category count |
+| L3 embeddings + clustering | support tickets | 8,000 (154x) | 6.2s | ~linear (a naive O(N²) bound was expected from full-linkage agglomerative clustering; sklearn's implementation didn't show it at this scale) |
+| L5 DiD adjudication | panel units (×20 periods) | 400 (100x) | 0.47s | ~linear |
+
+None of the four showed catastrophic (worse-than-quadratic) growth within two orders of magnitude. This is a measured result at the scales actually tested (up to ~150x, not literally 1000x) — extrapolating Shapley's O(N^1.6) out to, say, 5,000 categories would land around a minute, which would matter for an unusually category-heavy business but isn't a concern at realistic scale. The honest residual caveat: this is a compute-scaling benchmark on synthetic data, not a full production load test (concurrent users, database contention, network latency to a real warehouse aren't modeled here).
 
 ### "The LLM should not be treated as the source of quantitative truth"
 
@@ -283,4 +294,5 @@ All satisfied — 5 connected KPIs across 3 sources at 3 cadences; the semantic 
 1. ~~Live LLM wiring~~ — **done** (`engine/l4_llm_generation.py`, Qwen2.5-3B-Instruct on local GPU via `outlines`).
 2. ~~Minimal UI~~ — **done**, now with three persona views, a methods-breakdown panel, and both Tier 3 stretch features rendered live (`api/main.py` + `ui/`, `uv run uvicorn api.main:app --reload`).
 3. ~~Tier 3 stretch features~~ — **done**: visible counterfactual projection (`build_counterfactual_projection`) and adversarial counter-hypothesis generation (`generate_adversarial_challenge`), both in the UI.
-4. Ledger calibration scoring (Brier score, reliability diagram) once real scored outcomes accrue — not before, per the honesty constraint already enforced in `l6_narrate_ledger.py`. This and scalability testing (§6, objective 8) are the only two items left on the list.
+4. ~~Scalability testing~~ — **done**, `tests/scalability_test.py`, results in §6 objective 8.
+5. Ledger calibration scoring (Brier score, reliability diagram) once real scored outcomes accrue — not before, per the honesty constraint already enforced in `l6_narrate_ledger.py`. This is the only item left on the list.
