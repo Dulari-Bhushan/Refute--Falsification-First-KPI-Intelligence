@@ -553,8 +553,16 @@ MARKETING_DOSE_RESPONSE_FIXTURE: dict = {
 
 
 def main() -> None:
+    # local import: l6_narrate_ledger imports from this module, so importing
+    # it back at module top-level here would create a cycle. This demo
+    # entry point (not the compiler itself) is the one place that logs its
+    # two entitlement-denial scenarios to the same ledger table the API and
+    # a real pipeline run write to -- see GAPS.md item 8.
+    from engine.l6_narrate_ledger import get_ledger, record_entitlement_check
+
     contract = yaml.safe_load(CONTRACT_PATH.read_text())
     conn = load_database()
+    ledger = get_ledger()
     region = "West"
     windows = {
         "week": ((28, 30), (32, 34)),
@@ -577,16 +585,20 @@ def main() -> None:
     try:
         rep_predicate = validate_predicate(PREDICATE_FIXTURES[3])
         compile_predicate(rep_predicate, region, role="regional_vp", contract=contract, windows=windows)
+        record_entitlement_check(ledger, None, "row_column", "regional_vp", "rep_id", region, True, None)
         print("  ALLOWED (unexpected)")
     except EntitlementDenied as e:
+        record_entitlement_check(ledger, None, "row_column", "regional_vp", "rep_id", region, False, e.reason)
         print(f"  DENIED: {e.reason}")
 
     print("\nDomain scenario: marketing_analyst compiling any revenue-outcome predicate (domain-level, not row/column)")
     try:
         rev_predicate = validate_predicate(PREDICATE_FIXTURES[0])
         compile_predicate(rev_predicate, region, role="marketing_analyst", contract=contract, windows=windows)
+        record_entitlement_check(ledger, None, "domain", "marketing_analyst", "revenue", None, True, None)
         print("  ALLOWED (unexpected)")
     except EntitlementDenied as e:
+        record_entitlement_check(ledger, None, "domain", "marketing_analyst", "revenue", None, False, e.reason)
         print(f"  DENIED: {e.reason}")
 
     print("\nRejection check: a predicate with an empty refutes_if")

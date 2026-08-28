@@ -51,7 +51,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from engine.l4_compiler import PredicateRejected, check_entitlement, validate_predicate
+from engine.l4_compiler import EntitlementDenied, PredicateRejected, check_domain_entitlement, check_entitlement, validate_predicate
 from engine.l5_adjudicate import adjudicate_all
 
 DATA_DIR = Path(__file__).parent.parent / "data" / "synthetic"
@@ -112,6 +112,40 @@ CREATE TABLE IF NOT EXISTS run_snapshots (
     did_effects_json TEXT,
     did_mdes_json TEXT,
     created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS entitlement_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT,
+    check_type TEXT NOT NULL,
+    role TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    region TEXT,
+    allowed INTEGER NOT NULL,
+    reason TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS delivery_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT,
+    role TEXT NOT NULL,
+    persona TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    urgency TEXT NOT NULL,
+    message_preview TEXT NOT NULL,
+    simulated INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS llm_predicate_cache (
+    cache_key TEXT PRIMARY KEY,
+    model TEXT NOT NULL,
+    predicate_json TEXT NOT NULL,
+    reason TEXT,
+    prompt_tokens INTEGER,
+    completion_tokens INTEGER,
+    original_latency_ms REAL,
+    hit_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    last_hit_at TEXT
 );
 """
 
@@ -200,6 +234,51 @@ def write_ledger_entries(ledger: sqlite3.Connection, run_id: str, outcomes: list
             ),
         )
     ledger.commit()
+
+
+def record_entitlement_check(ledger: sqlite3.Connection, run_id: str | None, check_type: str, role: str, scope: str, region: str | None, allowed: bool, reason: str | None) -> None:
+    """GAPS.md item 8 (auditability half): entitlement ALLOWED/DENIED
+    decisions used to only print to a demo console (engine/l4_compiler.py's
+    main()) or return in an HTTP response (api/main.py's /api/entitlement-
+    check, /api/domain-check) -- neither is a real audit trail, since
+    neither persists. This is the one place both check_type ("row_column"
+    -- check_entitlement, or "domain" -- check_domain_entitlement) get
+    written to the same immutable log, independent of whether the caller
+    was a live pipeline run (run_id set) or an interactive UI check
+    (run_id=None -- a persona switch or the domain-check matrix isn't tied
+    to any one pipeline run)."""
+    ledger.execute(
+        "INSERT INTO entitlement_checks (run_id, check_type, role, scope, region, allowed, reason, created_at) VALUES (?,?,?,?,?,?,?,?)",
+        (run_id, check_type, role, scope, region, int(allowed), reason, datetime.now(timezone.utc).isoformat()),
+    )
+    ledger.commit()
+
+
+def check_entitlement_and_log(ledger: sqlite3.Connection, run_id: str | None, role: str, region: str, dim: str, contract: dict) -> None:
+    """Thin logging wrapper around engine.l4_compiler.check_entitlement --
+    kept OUTSIDE l4_compiler itself so the compiler stays ledger-agnostic
+    (importing the ledger module there would create an import cycle, since
+    this module already imports from l4_compiler). Re-raises
+    EntitlementDenied after logging, so callers that gate behavior on the
+    check still see the exception."""
+    try:
+        check_entitlement(role, region, dim, contract)
+    except EntitlementDenied as e:
+        record_entitlement_check(ledger, run_id, "row_column", role, dim, region, False, str(e))
+        raise
+    record_entitlement_check(ledger, run_id, "row_column", role, dim, region, True, None)
+
+
+def check_domain_entitlement_and_log(ledger: sqlite3.Connection, run_id: str | None, role: str, kpi_name: str, contract: dict) -> None:
+    """Domain-level counterpart to check_entitlement_and_log -- see that
+    function's docstring for why this wraps rather than lives in
+    l4_compiler."""
+    try:
+        check_domain_entitlement(role, kpi_name, contract)
+    except EntitlementDenied as e:
+        record_entitlement_check(ledger, run_id, "domain", role, kpi_name, None, False, str(e))
+        raise
+    record_entitlement_check(ledger, run_id, "domain", role, kpi_name, None, True, None)
 
 
 # --------------------------------------------------------------------------
@@ -325,6 +404,73 @@ def build_counterfactual_projection(region: str = "West", weeks_ahead: int = 4) 
 
 
 # --------------------------------------------------------------------------
+# Delivery-channel routing (GAPS.md item 7). Real routing logic, honestly
+# SIMULATED delivery -- REFUTE has no actual Slack/email credentials, and
+# pretending to have sent a real message would be exactly the kind of
+# dishonest placeholder the project's own ethos (see calibration.py, §4 of
+# README.md) rejects everywhere else. What's real here: the ROUTING
+# DECISION (which channel a given brief goes to, and why) is computed from
+# the contract's declared per-role channels plus this run's actual urgency
+# signal (whether a confirmed, high-confidence action exists) -- not a
+# fixed lookup table pretending to be a decision.
+# --------------------------------------------------------------------------
+
+
+def determine_delivery_channel(role: str, action: dict | None, contract: dict) -> dict:
+    """A role's contract entry lists its available PUSH channel(s), in
+    priority order (see semantic/kpi_contract.yaml's delivery_channels
+    comment); "dashboard" (pull-only) is always the fallback for everyone.
+    The actual channel used for THIS brief also depends on urgency: a
+    role's top push channel is only used when there's a confirmed,
+    high-confidence action to act on -- a role that owns a Slack channel
+    for actionable alerts shouldn't get paged for "nothing survived
+    testing yet", any more than a VP's digest should surface a still-
+    unconfirmed INCONCLUSIVE hypothesis as if it were decided."""
+    available = contract["entitlements"].get(role, {}).get("delivery_channels", ["dashboard"])
+    has_push_channel = len(available) > 1  # every role has "dashboard"; a real push channel is anything beyond that
+    has_confirmed_action = bool(action and action.get("has_action"))
+    confidence = (action or {}).get("action", {}).get("confidence", "") if has_confirmed_action else ""
+    is_urgent = has_confirmed_action and confidence.startswith("High")
+
+    if is_urgent and has_push_channel:
+        channel, urgency = available[0], "urgent_push"
+        reason = f"Confirmed action at {confidence or 'n/a'} confidence -> urgent push to this role's top channel."
+    elif has_confirmed_action and has_push_channel:
+        channel, urgency = available[0], "routine_push"
+        reason = "Confirmed action, but not high-confidence -> routine push, not an interrupt."
+    elif not has_push_channel:
+        channel, urgency = "dashboard", "pull_only"
+        reason = f"This role has no push channel in the contract ({role} pulls from the dashboard, isn't paged) -- dashboard regardless of urgency."
+    else:
+        channel, urgency = "dashboard", "pull_only"
+        reason = "No confirmed action yet -- dashboard only, nothing worth pushing."
+
+    return {
+        "role": role,
+        "persona": contract["entitlements"].get(role, {}).get("persona", role),
+        "channel": channel,
+        "urgency": urgency,
+        "available_channels": available,
+        "reason": reason,
+    }
+
+
+def simulate_delivery(ledger: sqlite3.Connection, run_id: str, role: str, action: dict | None, message_preview: str, contract: dict) -> dict:
+    """Computes the real routing decision (determine_delivery_channel) and
+    logs a SIMULATED delivery record to the ledger -- simulated=1 always,
+    since no actual Slack/email API is called. This is the persisted,
+    inspectable trail GAPS.md item 7 asked for: which channel a given
+    brief WOULD have gone through and why, not just a design claim."""
+    routing = determine_delivery_channel(role, action, contract)
+    ledger.execute(
+        "INSERT INTO delivery_log (run_id, role, persona, channel, urgency, message_preview, simulated, created_at) VALUES (?,?,?,?,?,?,1,?)",
+        (run_id, role, routing["persona"], routing["channel"], routing["urgency"], message_preview[:280], datetime.now(timezone.utc).isoformat()),
+    )
+    ledger.commit()
+    return {**routing, "message_preview": message_preview[:280], "simulated": True}
+
+
+# --------------------------------------------------------------------------
 # Persona rendering -- one ledger, two views. Entitlements are checked
 # BEFORE rendering, not filtered out of an already-built response.
 # --------------------------------------------------------------------------
@@ -351,7 +497,7 @@ def render_ops_manager_brief(outcomes: list, action: dict) -> str:
     return "\n".join(lines)
 
 
-def render_vp_brief(outcomes: list, action: dict, role: str, region: str, contract: dict) -> str:
+def render_vp_brief(outcomes: list, action: dict, role: str, region: str, contract: dict, ledger: sqlite3.Connection | None = None, run_id: str | None = None) -> str:
     survived = [o for o in outcomes if o.verdict == "SURVIVED"]
     killed = [o for o in outcomes if o.verdict == "KILLED"]
     inconclusive = [o for o in outcomes if o.verdict == "INCONCLUSIVE"]
@@ -369,7 +515,10 @@ def render_vp_brief(outcomes: list, action: dict, role: str, region: str, contra
     # checked here, before anything rep-specific would be rendered, not
     # filtered out of an already-assembled response.
     try:
-        check_entitlement(role, region, "rep_id", contract)
+        if ledger is not None:
+            check_entitlement_and_log(ledger, run_id, role, region, "rep_id", contract)
+        else:
+            check_entitlement(role, region, "rep_id", contract)
         lines.append("\n(Rep-level detail available to this role.)")
     except Exception as e:  # noqa: BLE001
         lines.append(f"\n(Rep-level account detail withheld: {e})")
@@ -597,7 +746,7 @@ def main() -> None:
     with telemetry_span(ledger, run_id, "L6_narrate", is_llm_call=False):
         action = build_action_recommendation(l2_results, survived_outcome, contract)
         ops_brief = render_ops_manager_brief(outcomes, action)
-        vp_brief = render_vp_brief(outcomes, action, role="regional_vp", region="West", contract=contract)
+        vp_brief = render_vp_brief(outcomes, action, role="regional_vp", region="West", contract=contract, ledger=ledger, run_id=run_id)
         engineer_brief = render_engineer_brief(outcomes, action, all_telemetry)
 
     print(ops_brief)
@@ -605,6 +754,17 @@ def main() -> None:
     print(vp_brief)
     print()
     print(engineer_brief)
+
+    # --- delivery-channel routing (GAPS.md item 7) ---
+    action_wrapped = {"has_action": survived_outcome is not None, "action": action}
+    deliveries = [
+        simulate_delivery(ledger, run_id, "ops_manager_west", action_wrapped, ops_brief, contract),
+        simulate_delivery(ledger, run_id, "regional_vp", action_wrapped, vp_brief, contract),
+        simulate_delivery(ledger, run_id, "platform_engineer", action_wrapped, engineer_brief, contract),
+    ]
+    print("\n=== Delivery-channel routing (SIMULATED -- no real Slack/email API called) ===")
+    for d in deliveries:
+        print(f"  {d['role']:<20} -> {d['channel']:<15} ({d['urgency']})  {d['reason']}")
 
     # --- LLM vs. non-LLM breakdown -- literal telemetry, not a design claim ---
     rows = ledger.execute("SELECT stage, is_llm_call, latency_ms, estimated_cost_usd FROM telemetry WHERE run_id=?", (run_id,)).fetchall()

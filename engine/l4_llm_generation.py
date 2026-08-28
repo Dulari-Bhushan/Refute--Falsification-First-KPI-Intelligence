@@ -53,9 +53,12 @@ runs.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import sqlite3
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 import outlines
@@ -126,6 +129,54 @@ class GenerationResult:
     completion_tokens: int
     latency_ms: float
     raw_output: str
+    cache_hit: bool = False
+
+
+def topic_cache_key(topic: TopicCandidate, kpi_context: dict) -> str:
+    """GAPS.md item 10 (LLM economics: caching): the same topic cluster
+    surfacing again in a later run against the same KPI movement is a real
+    scenario, not a hypothetical -- a scheduled weekly re-run over the same
+    still-open investigation would see the exact same ticket cluster every
+    time until it's resolved. Keyed on the cluster's actual semantic
+    identity (its top terms and changepoint, not just an arbitrary
+    cluster_id that could get reassigned across runs) plus the KPI context
+    that shaped the prompt, so a genuinely different scenario never
+    collides with a cached one."""
+    payload = json.dumps(
+        {
+            "top_terms": sorted(topic.top_terms),
+            "changepoint_week": topic.changepoint_week,
+            "kpi": kpi_context["kpi"],
+            "region": kpi_context["region"],
+            "kpi_onset_week": kpi_context["kpi_onset_week"],
+            "movement_pct": round(kpi_context["movement_pct"], 3),
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()[:24]
+
+
+def _lookup_cache(ledger: sqlite3.Connection, cache_key: str) -> dict | None:
+    ledger.row_factory = sqlite3.Row
+    row = ledger.execute("SELECT * FROM llm_predicate_cache WHERE cache_key = ?", (cache_key,)).fetchone()
+    ledger.row_factory = None
+    return dict(row) if row else None
+
+
+def _record_cache_hit(ledger: sqlite3.Connection, cache_key: str) -> None:
+    ledger.execute(
+        "UPDATE llm_predicate_cache SET hit_count = hit_count + 1, last_hit_at = ? WHERE cache_key = ?",
+        (datetime.now(timezone.utc).isoformat(), cache_key),
+    )
+    ledger.commit()
+
+
+def _store_cache(ledger: sqlite3.Connection, cache_key: str, result: "GenerationResult") -> None:
+    ledger.execute(
+        "INSERT OR REPLACE INTO llm_predicate_cache (cache_key, model, predicate_json, reason, prompt_tokens, completion_tokens, original_latency_ms, hit_count, created_at, last_hit_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (cache_key, MODEL_NAME, json.dumps(result.predicate_dict), result.reason, result.prompt_tokens, result.completion_tokens, result.latency_ms, 0, datetime.now(timezone.utc).isoformat(), None),
+    )
+    ledger.commit()
 
 
 _generator = None
@@ -230,8 +281,32 @@ def generate_adversarial_challenge(survived_predicate: dict, kpi_context: dict) 
     return _generate_and_validate(ADVERSARIAL_SYSTEM_PROMPT, build_adversarial_prompt(survived_predicate, kpi_context))
 
 
-def generate_predicate_for_topic(topic: TopicCandidate, kpi_context: dict) -> GenerationResult:
-    return _generate_and_validate(SYSTEM_PROMPT, build_user_prompt(topic, kpi_context))
+def generate_predicate_for_topic(topic: TopicCandidate, kpi_context: dict, ledger: sqlite3.Connection | None = None) -> GenerationResult:
+    """Checks the ledger-backed predicate cache first when `ledger` is
+    given (main() passes one; direct/test callers that omit it always
+    generate fresh, so this stays a pure function when caching isn't
+    wanted). A cache hit means genuinely $0 tokens spent and ~0 latency for
+    THIS run -- not a simulated saving, an actual skipped GPU call."""
+    if ledger is not None:
+        cache_key = topic_cache_key(topic, kpi_context)
+        cached = _lookup_cache(ledger, cache_key)
+        if cached is not None:
+            _record_cache_hit(ledger, cache_key)
+            return GenerationResult(
+                predicate_dict=json.loads(cached["predicate_json"]),
+                accepted=True,
+                reason=f"Cache hit (originally generated {cached['created_at']}, {cached['hit_count'] + 1} hit(s) so far): {cached['reason']}",
+                prompt_tokens=0,
+                completion_tokens=0,
+                latency_ms=0.0,
+                raw_output=cached["predicate_json"],
+                cache_hit=True,
+            )
+
+    result = _generate_and_validate(SYSTEM_PROMPT, build_user_prompt(topic, kpi_context))
+    if ledger is not None and result.accepted:
+        _store_cache(ledger, topic_cache_key(topic, kpi_context), result)
+    return result
 
 
 def _generate_and_validate(system_prompt: str, user_prompt: str) -> GenerationResult:
@@ -302,28 +377,44 @@ def main() -> None:
     l3_candidates_raw = json.loads((DATA_DIR / "l3_topic_candidates.json").read_text())
     candidates = [TopicCandidate(**c) for c in l3_candidates_raw if c["became_candidate"]]
 
-    print(f"Loading {MODEL_NAME} on {'cuda' if torch.cuda.is_available() else 'cpu'}...")
-    _load()  # warm up once, outside the per-topic timing loop
-    print("Loaded.\n")
+    from engine.l6_narrate_ledger import get_ledger
+
+    ledger = get_ledger()
+
+    # GAPS.md item 10: check the cache for every candidate BEFORE deciding
+    # whether the model needs loading at all -- if every topic this run
+    # would generate for is already cached, the real economic win is
+    # skipping the GPU load entirely, not just the per-call generation.
+    cache_status = {topic.cluster_id: _lookup_cache(ledger, topic_cache_key(topic, kpi_context)) is not None for topic in candidates}
+    n_cached = sum(cache_status.values())
+    if n_cached < len(candidates):
+        print(f"Loading {MODEL_NAME} on {'cuda' if torch.cuda.is_available() else 'cpu'}... ({n_cached}/{len(candidates)} topics already cached)")
+        _load()  # warm up once, outside the per-topic timing loop
+        print("Loaded.\n")
+    else:
+        print(f"All {len(candidates)} topic(s) already cached from a prior run -- skipping model load entirely.\n")
 
     results = []
     for topic in candidates:
         print(f"--- Generating predicate for topic cluster {topic.cluster_id} (top terms: {', '.join(topic.top_terms[:4])}) ---")
-        result = generate_predicate_for_topic(topic, kpi_context)
+        result = generate_predicate_for_topic(topic, kpi_context, ledger=ledger)
         results.append((topic, result))
-        if result.accepted:
+        if result.cache_hit:
+            print(f"  CACHE HIT: {result.reason}")
+        elif result.accepted:
             print(f"  ACCEPTED: {json.dumps(result.predicate_dict, indent=2)}")
         else:
             print(f"  REJECTED: {result.reason}")
         cost = estimate_hosted_cost(result.prompt_tokens, result.completion_tokens)
-        print(f"  tokens: {result.prompt_tokens} in / {result.completion_tokens} out, {result.latency_ms:.0f}ms, $0.0000 actual (local GPU) / ~${cost:.4f} if this were a hosted API call\n")
+        print(f"  tokens: {result.prompt_tokens} in / {result.completion_tokens} out, {result.latency_ms:.0f}ms, $0.0000 actual (local GPU) / ~${cost:.4f} if this were a hosted API call{' -- cache hit, no GPU call made this run' if result.cache_hit else ''}\n")
 
     accepted = [r for _, r in results if r.accepted]
-    print(f"\n{len(accepted)}/{len(results)} candidate topics produced an accepted, schema+semantically valid predicate.")
+    n_hits = sum(1 for r in accepted if r.cache_hit)
+    print(f"\n{len(accepted)}/{len(results)} candidate topics produced an accepted, schema+semantically valid predicate ({n_hits} served from cache, {len(accepted) - n_hits} generated fresh this run).")
     (DATA_DIR / "l4_llm_generated_predicates.json").write_text(
         json.dumps(
             [
-                {"cluster_id": t.cluster_id, "top_terms": t.top_terms, "accepted": r.accepted, "predicate": r.predicate_dict, "reason": r.reason, "prompt_tokens": r.prompt_tokens, "completion_tokens": r.completion_tokens, "latency_ms": r.latency_ms}
+                {"cluster_id": t.cluster_id, "top_terms": t.top_terms, "accepted": r.accepted, "predicate": r.predicate_dict, "reason": r.reason, "prompt_tokens": r.prompt_tokens, "completion_tokens": r.completion_tokens, "latency_ms": r.latency_ms, "cache_hit": r.cache_hit}
                 for t, r in results
             ],
             indent=2,
@@ -340,9 +431,8 @@ def main() -> None:
     # uses, so the LLM-vs-non-LLM breakdown in the ledger is honest about
     # this run actually having made LLM calls.
     from engine.l5_adjudicate import adjudicate_all
-    from engine.l6_narrate_ledger import get_ledger, telemetry_span, write_ledger_entries
+    from engine.l6_narrate_ledger import telemetry_span, write_ledger_entries
 
-    ledger = get_ledger()
     run_id = f"llm-{int(time.time())}"
     print("\n=== Adjudicating LLM-generated predicates through L5 (identical pipeline to the templated fixtures) ===")
     for topic, result in results:
@@ -350,7 +440,7 @@ def main() -> None:
             ledger,
             run_id,
             f"L4_llm_generate_{result.predicate_dict['hypothesis_id'] if result.accepted else f'cluster_{topic.cluster_id}_rejected'}",
-            is_llm_call=True,
+            is_llm_call=not result.cache_hit,  # a cache hit made no LLM call this run -- the telemetry's LLM-vs-deterministic breakdown should say so honestly, not count it as a fresh call
             model=MODEL_NAME,
             tokens_in=result.prompt_tokens,
             tokens_out=result.completion_tokens,

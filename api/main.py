@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 
 from engine.l4_compiler import EntitlementDenied, check_domain_entitlement, check_entitlement
 from engine.l5_adjudicate import adjudicate_all
-from engine.l6_narrate_ledger import build_action_recommendation, build_counterfactual_projection, detect_contradictory_verdicts, get_ledger, submit_feedback
+from engine.l6_narrate_ledger import build_action_recommendation, build_counterfactual_projection, detect_contradictory_verdicts, determine_delivery_channel, get_ledger, record_entitlement_check, submit_feedback
 from engine.methods_registry import REGISTRY, assert_llm_not_quantitative_source
 from engine.calibration import run_calibration_demo
 from engine.drift_monitor import assess_drift, run_drift_demo
@@ -182,14 +182,24 @@ def telemetry():
 
 @app.get("/api/entitlement-check")
 def entitlement_check(role: str, dim: str, region: str = "West"):
+    """GAPS.md item 8 (auditability): every check made through this
+    endpoint -- every persona-tab switch in the UI -- is persisted to the
+    ledger's entitlement_checks table via record_entitlement_check(), not
+    just returned in the HTTP response. run_id=None since an interactive
+    UI check isn't tied to any one pipeline run."""
     contract = _contract()
+    conn = get_ledger()
     try:
         check_entitlement(role, region, dim, contract)
+        record_entitlement_check(conn, None, "row_column", role, dim, region, True, None)
         return {"allowed": True, "reason": None}
     except EntitlementDenied as e:
+        record_entitlement_check(conn, None, "row_column", role, dim, region, False, str(e))
         return {"allowed": False, "reason": str(e)}
     except Exception as e:  # noqa: BLE001 -- unknown role/dim is a client error, surface it plainly
         raise HTTPException(400, str(e)) from e
+    finally:
+        conn.close()
 
 
 @app.get("/api/domain-check")
@@ -201,11 +211,65 @@ def domain_check(role: str, kpi: str = "revenue"):
     regional_vp on 'rep_attributed_revenue') regardless of region or
     dimension requested."""
     contract = _contract()
+    conn = get_ledger()
     try:
         check_domain_entitlement(role, kpi, contract)
+        record_entitlement_check(conn, None, "domain", role, kpi, None, True, None)
         return {"allowed": True, "reason": None}
     except EntitlementDenied as e:
+        record_entitlement_check(conn, None, "domain", role, kpi, None, False, str(e))
         return {"allowed": False, "reason": str(e)}
+    finally:
+        conn.close()
+
+
+@app.get("/api/entitlement-log")
+def entitlement_log(limit: int = 50):
+    """The persisted audit trail GAPS.md item 8 asked for: every row/column
+    and domain-level entitlement decision made anywhere (a real pipeline
+    run's compile-time checks, or an interactive /api/entitlement-check /
+    /api/domain-check call), newest first. Previously this only ever
+    printed to a console or returned in one HTTP response -- 'what
+    evidence supports a verdict' was auditable, 'who tried to access what
+    and was denied' was not."""
+    ledger_path = DATA_DIR / "ledger.sqlite"
+    if not ledger_path.exists():
+        return {"rows": []}
+    conn = sqlite3.connect(ledger_path)
+    conn.row_factory = sqlite3.Row
+    rows = [dict(r) for r in conn.execute("SELECT * FROM entitlement_checks ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
+    conn.close()
+    return {"rows": rows}
+
+
+@app.get("/api/delivery-channel")
+def delivery_channel(role: str):
+    """GAPS.md item 7: which channel this role's brief would actually route
+    through right now, computed from the real current action-recommendation
+    state (engine.l6_narrate_ledger.determine_delivery_channel) -- not a
+    fixed lookup, an urgency-gated decision. See /api/delivery-log for the
+    persisted SIMULATED delivery records a real pipeline run writes."""
+    l2 = _read_json("l2_localisation_results.json")
+    outcomes = adjudicate_all()
+    survived = next((o for o in outcomes if o.verdict == "SURVIVED"), None)
+    action_wrapped = {"has_action": survived is not None, "action": build_action_recommendation(l2, survived, _contract()) if survived else None}
+    return determine_delivery_channel(role, action_wrapped, _contract())
+
+
+@app.get("/api/delivery-log")
+def delivery_log(limit: int = 20):
+    """Persisted SIMULATED delivery records -- simulated=1 always, since no
+    real Slack/email API is ever called (see engine.l6_narrate_ledger.
+    simulate_delivery's docstring for why pretending otherwise would be
+    dishonest). What's real is the routing decision behind each record."""
+    ledger_path = DATA_DIR / "ledger.sqlite"
+    if not ledger_path.exists():
+        return {"rows": []}
+    conn = sqlite3.connect(ledger_path)
+    conn.row_factory = sqlite3.Row
+    rows = [dict(r) for r in conn.execute("SELECT * FROM delivery_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
+    conn.close()
+    return {"rows": rows}
 
 
 @app.get("/api/entitlements")

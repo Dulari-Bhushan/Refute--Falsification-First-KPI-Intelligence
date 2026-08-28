@@ -194,12 +194,17 @@ function renderFreshness(recon) {
       <td>${s.covered_through}</td>
       <td class="${s.staleness_days > 5 ? "stale" : ""}">${s.staleness_days}d</td>
     </tr>`).join("");
+  const missingRows = (recon.missing_data_rates || [])
+    .map((m) => `<tr><td>${m.join}</td><td>${m.matched_rows}/${m.expected_rows}</td><td class="${m.missing_pct > 5 ? "stale" : ""}">${m.missing_pct}%</td></tr>`)
+    .join("");
   el.innerHTML = `<table class="evidence-table">
     <thead><tr><th>Source</th><th>Cadence</th><th>Covered through</th><th>Staleness</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
   <p class="subtext" style="margin-top:10px">Revenue source agreement: <strong>${recon.revenue_source_agreement_claim.verdict}</strong> &mdash; ${recon.revenue_source_agreement_claim.explanation || "sources agree within tolerance."}</p>
-  ${recon.rep_attribution_bounds_claim ? `<p class="subtext" style="margin-top:6px">Rep-attribution bounds: <strong>${recon.rep_attribution_bounds_claim.verdict}</strong> &mdash; ${recon.rep_attribution_bounds_claim.explanation || ""}</p>` : ""}`;
+  ${recon.rep_attribution_bounds_claim ? `<p class="subtext" style="margin-top:6px">Rep-attribution bounds: <strong>${recon.rep_attribution_bounds_claim.verdict}</strong> &mdash; ${recon.rep_attribution_bounds_claim.explanation || ""}</p>` : ""}
+  ${missingRows ? `<p class="subtext" style="margin-top:14px;margin-bottom:6px">Missing-data rate per cross-source join (an inner/left join silently drops or NaNs unmatched rows -- this quantifies that instead):</p>
+  <table class="evidence-table"><thead><tr><th>Join</th><th>Matched</th><th>Missing</th></tr></thead><tbody>${missingRows}</tbody></table>` : ""}`;
 }
 
 // ---------------------------------------------------------------- telemetry
@@ -443,6 +448,48 @@ async function renderDomainCheck() {
   el.innerHTML = `<table class="evidence-table"><thead><tr><th>Role</th><th>KPI requested</th><th>Result</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+// ---------------------------------------------------------------- entitlement audit log
+async function renderEntitlementLog() {
+  const el = document.getElementById("entitlementLogContent");
+  const data = await getJSON("/api/entitlement-log?limit=30");
+  if (!data.rows || data.rows.length === 0) {
+    el.innerHTML = `<p class="subtext">No entitlement checks recorded yet.</p>`;
+    return;
+  }
+  const rows = data.rows
+    .map((r) => `<tr>
+      <td>${r.created_at.split("T")[0]} ${r.created_at.split("T")[1].slice(0, 8)}</td>
+      <td>${r.check_type}</td>
+      <td>${r.role}</td>
+      <td>${r.scope}${r.region ? ` (${r.region})` : ""}</td>
+      <td style="color:${r.allowed ? "var(--survived)" : "var(--killed)"}">${r.allowed ? "ALLOWED" : "DENIED"}</td>
+      <td class="subtext">${r.reason || "&mdash;"}</td>
+    </tr>`)
+    .join("");
+  el.innerHTML = `<table class="evidence-table"><thead><tr><th>When</th><th>Type</th><th>Role</th><th>Scope</th><th>Result</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// ---------------------------------------------------------------- delivery-channel routing (simulated)
+async function renderDeliveryLog() {
+  const el = document.getElementById("deliveryLogContent");
+  const data = await getJSON("/api/delivery-log?limit=20");
+  if (!data.rows || data.rows.length === 0) {
+    el.innerHTML = `<p class="subtext">No deliveries simulated yet -- run the pipeline (<code>uv run python -m engine.l6_narrate_ledger</code>).</p>`;
+    return;
+  }
+  const urgencyColor = (u) => (u === "urgent_push" ? "var(--killed)" : u === "routine_push" ? "var(--inconclusive)" : "var(--text-dim)");
+  const rows = data.rows
+    .map((r) => `<tr>
+      <td>${r.role}</td>
+      <td>${r.persona}</td>
+      <td>${r.channel}</td>
+      <td style="color:${urgencyColor(r.urgency)}">${r.urgency}</td>
+      <td class="subtext">${r.message_preview.slice(0, 90)}&hellip;</td>
+    </tr>`)
+    .join("");
+  el.innerHTML = `<table class="evidence-table"><thead><tr><th>Role</th><th>Persona</th><th>Channel</th><th>Urgency</th><th>Message preview</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 // ---------------------------------------------------------------- adversarial challenge
 function renderAdversarial(data) {
   const panel = document.getElementById("adversarialPanel");
@@ -522,6 +569,8 @@ async function init() {
   renderCalibration(calibration);
   renderDrift(drift);
   renderDomainCheck();
+  renderEntitlementLog();
+  renderDeliveryLog();
 
   await renderBrief(STATE.role);
 
