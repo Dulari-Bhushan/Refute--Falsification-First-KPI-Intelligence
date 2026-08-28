@@ -160,3 +160,11 @@ entitlements:
     column_scope:
       rep_detail_restricted: deny
     persona: exec_vp
+
+  platform_engineer:
+    description: "Engineer maintaining/auditing the REFUTE pipeline itself. Full cross-region and rep-level visibility -- not because engineers outrank the VP in the org chart, but because auditing a verdict (checking a SQL hash, re-running a query, debugging why a test came back INCONCLUSIVE) requires seeing exactly what the compiler saw. This role exists to demonstrate that entitlements are about job function, not seniority."
+    row_scope:
+      region: [West, East, Central]
+    column_scope:
+      rep_detail_restricted: allow
+    persona: engineer

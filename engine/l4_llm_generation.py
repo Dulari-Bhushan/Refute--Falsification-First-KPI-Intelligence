@@ -182,11 +182,63 @@ def validate_semantics(predicate: Predicate) -> None:
         raise PredicateRejected(f"Archetype '{predicate.test_archetype}' is schema-legal but not implemented by the SQL compiler yet (supported: {sorted(SUPPORTED_ARCHETYPES)}).")
 
 
+ADVERSARIAL_SYSTEM_PROMPT = """You are the adversarial-challenge step of REFUTE, a falsification-first root-cause engine for business KPIs.
+
+A hypothesis has SURVIVED statistical testing and is about to be reported as the cause of a KPI movement. Your job is to argue against it: propose the STRONGEST plausible ALTERNATIVE causal predicate for the SAME KPI movement, using a DIFFERENT dimension or different treatment/control groups than the surviving hypothesis. You are not trying to be agreeable -- you are trying to find the best case that the surviving hypothesis has this wrong, so that case can be tested too before anyone trusts the original conclusion.
+
+Output a JSON object with exactly these fields (same schema as any predicate):
+- hypothesis_id: snake_case, prefixed with "h_adversarial_"
+- mechanism: one sentence, plain English, stating your ALTERNATIVE causal mechanism -- it must be a genuinely different story than the surviving hypothesis, not a restatement of it
+- test_archetype: "placebo" or "specificity" (see field definitions below)
+- treatment: {"dim": one of "fulfillment_center"/"product_category"/"rep_id", "in": [values from the valid list]}
+- control: {"dim": SAME dimension as treatment, "in": [different values, no overlap]}
+- outcome: {"metric": "revenue", "expect": "decline"}
+- temporal: {"cause_onset": a date string, "kpi_onset": a date string}
+- refutes_if: {"condition": a concrete, checkable condition under which YOUR alternative would be considered wrong, "rationale": why that condition would disprove your mechanism}
+
+test_archetype: "placebo" if your mechanism claims the cause only reaches a specific slice of the business (e.g. one fulfillment center, or certain reps) -- "specificity" if your mechanism claims only certain products/categories should be affected."""
+
+
+def build_adversarial_prompt(survived_predicate: dict, kpi_context: dict) -> str:
+    return (
+        f"KPI: {kpi_context['kpi']} in region {kpi_context['region']} moved {kpi_context['movement_pct']:+.1%} "
+        f"starting week {kpi_context['kpi_onset_week']}.\n\n"
+        f"The hypothesis that survived testing: \"{survived_predicate['mechanism']}\" "
+        f"(tested via {survived_predicate['treatment']['dim']}, treatment={survived_predicate['treatment']['in']} "
+        f"vs control={survived_predicate['control']['in']}).\n\n"
+        "Valid dimensions and the ONLY values you may choose treatment/control from:\n"
+        f"  fulfillment_center: {VALID_DIM_VALUES['fulfillment_center']}\n"
+        f"  product_category: {VALID_DIM_VALUES['product_category']}\n"
+        f"  rep_id: {VALID_DIM_VALUES['rep_id']}\n\n"
+        "Propose the strongest alternative explanation you can, using a DIFFERENT dimension than the one above "
+        "if at all plausible, so it is a genuinely independent test, not a restatement of the same claim."
+    )
+
+
+def generate_adversarial_challenge(survived_predicate: dict, kpi_context: dict) -> GenerationResult:
+    """Tier 3 stretch feature: before a SURVIVED verdict is trusted, ask the
+    model to argue the other side -- propose the best counter-explanation
+    it can construct, using a different dimension than the surviving
+    predicate so it's a genuinely independent test. Then (see main()) run
+    that challenge through the identical L4/L5 pipeline. If the challenge
+    also survives, that's a real signal the original conclusion is more
+    contested than a single surviving test suggests; if it's killed, that's
+    evidence the original conclusion held up against the best case the
+    model could make against it -- either way, this is one more test
+    result feeding the ledger, not a debate settled by which side "sounds"
+    more convincing."""
+    return _generate_and_validate(ADVERSARIAL_SYSTEM_PROMPT, build_adversarial_prompt(survived_predicate, kpi_context))
+
+
 def generate_predicate_for_topic(topic: TopicCandidate, kpi_context: dict) -> GenerationResult:
+    return _generate_and_validate(SYSTEM_PROMPT, build_user_prompt(topic, kpi_context))
+
+
+def _generate_and_validate(system_prompt: str, user_prompt: str) -> GenerationResult:
     generator, tokenizer = _load()
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": build_user_prompt(topic, kpi_context)},
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
     ]
     prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     prompt_tokens = len(tokenizer(prompt)["input_ids"])
@@ -316,6 +368,42 @@ def main() -> None:
         write_ledger_entries(ledger, run_id, outcomes)
         for o in outcomes:
             print(f"  {o.hypothesis_id:<32} [{o.verdict:<12}] {o.reason}")
+
+    # --- Tier 3 stretch feature: adversarial challenge against the SURVIVED hypothesis ---
+    from engine.l4_compiler import PREDICATE_FIXTURES
+
+    survived_predicate = next(p for p in PREDICATE_FIXTURES if p["hypothesis_id"] == "h_rep_attrition")
+    print(f"\n=== Adversarial challenge against '{survived_predicate['hypothesis_id']}' (the SURVIVED hypothesis) ===")
+    challenge = generate_adversarial_challenge(survived_predicate, kpi_context)
+    with telemetry_span(
+        ledger,
+        run_id,
+        f"L4_adversarial_{challenge.predicate_dict['hypothesis_id'] if challenge.accepted else 'rejected'}",
+        is_llm_call=True,
+        model=MODEL_NAME,
+        tokens_in=challenge.prompt_tokens,
+        tokens_out=challenge.completion_tokens,
+        cost_usd=0.0,
+        override_latency_ms=challenge.latency_ms,
+    ):
+        pass
+
+    if not challenge.accepted:
+        print(f"  No valid adversarial challenge produced: {challenge.reason}")
+    else:
+        print(f"  Challenge: {json.dumps(challenge.predicate_dict, indent=2)}")
+        challenge_outcomes = adjudicate_all(predicates=[challenge.predicate_dict])
+        if challenge_outcomes:
+            write_ledger_entries(ledger, run_id, challenge_outcomes)
+            for o in challenge_outcomes:
+                verdict_meaning = (
+                    "the original conclusion is more contested than a single surviving test suggested -- review both."
+                    if o.verdict == "SURVIVED"
+                    else "the original conclusion held up against the strongest counter-case the model could construct."
+                )
+                print(f"  {o.hypothesis_id:<32} [{o.verdict:<12}] {o.reason}")
+                print(f"    -> {verdict_meaning}")
+
     ledger.close()
 
 

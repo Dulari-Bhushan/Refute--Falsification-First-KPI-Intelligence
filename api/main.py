@@ -6,12 +6,13 @@ this just serves it.
 
 Persona rendering is deliberately NOT pre-baked into a server-side string
 here (unlike engine/l6_narrate_ledger.py's console output, which does
-render text for the CLI demo). The frontend builds both persona views from
-the SAME /api/hypotheses + /api/summary data, filtered by
-/api/entitlement-check -- "one ledger, two renderers" means the renderer
-can be the browser, not just the ledger module; the entitlement check
-itself still goes through the real engine.l4_compiler.check_entitlement
-function, not a client-side guess at what should be hidden.
+render text for the CLI demo). The frontend builds all three persona views
+(leader / manager / engineer) from the SAME /api/hypotheses + /api/summary
+data, filtered by /api/entitlement-check -- "one ledger, many renderers"
+means the renderer can be the browser, not just the ledger module; the
+entitlement check itself still goes through the real
+engine.l4_compiler.check_entitlement function, not a client-side guess at
+what should be hidden.
 
 Run: uv run uvicorn api.main:app --reload
 """
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import asdict
 from pathlib import Path
 
 import pandas as pd
@@ -30,7 +32,8 @@ from fastapi.staticfiles import StaticFiles
 
 from engine.l4_compiler import EntitlementDenied, check_entitlement
 from engine.l5_adjudicate import adjudicate_all
-from engine.l6_narrate_ledger import build_action_recommendation, submit_feedback
+from engine.l6_narrate_ledger import build_action_recommendation, build_counterfactual_projection, submit_feedback
+from engine.methods_registry import REGISTRY, assert_llm_not_quantitative_source
 
 ROOT = Path(__file__).parent.parent
 DATA_DIR = ROOT / "data" / "synthetic"
@@ -169,6 +172,43 @@ def feedback(original_hypothesis_id: str, analyst_role: str, correction_text: st
 @app.get("/api/semantic-contract")
 def semantic_contract():
     return _contract()
+
+
+@app.get("/api/methods-breakdown")
+def methods_breakdown():
+    """The explicit answer to the brief's own requirement: which method
+    category (deterministic logic / SQL / business rules / statistics /
+    traditional ML / causal inference / retrieval / LLM) each pipeline
+    stage uses, and why -- imported directly from
+    engine/methods_registry.py, not restated here, so the UI can never
+    drift from what the code actually declares. assert_llm_not_quantitative_
+    source() is re-checked on every request, not just at import time."""
+    assert_llm_not_quantitative_source()
+    return {
+        "entries": [asdict(e) for e in REGISTRY],
+        "categories": sorted({e.method_category for e in REGISTRY}),
+        "llm_stages_are_never_quantitative": True,
+    }
+
+
+@app.get("/api/counterfactual")
+def counterfactual(region: str = "West", weeks_ahead: int = 4):
+    return build_counterfactual_projection(region=region, weeks_ahead=weeks_ahead)
+
+
+@app.get("/api/adversarial-challenges")
+def adversarial_challenges():
+    """Verdicts for any h_adversarial_* predicates written by
+    engine/l4_llm_generation.py's generate_adversarial_challenge() --
+    empty if that step (run_pipeline.py --with-llm) hasn't been run yet."""
+    ledger_path = DATA_DIR / "ledger.sqlite"
+    if not ledger_path.exists():
+        return {"challenges": []}
+    conn = sqlite3.connect(ledger_path)
+    conn.row_factory = sqlite3.Row
+    rows = [dict(r) for r in conn.execute("SELECT * FROM ledger WHERE hypothesis_id LIKE 'h_adversarial_%' ORDER BY id DESC LIMIT 10").fetchall()]
+    conn.close()
+    return {"challenges": rows}
 
 
 if UI_DIR.exists():
