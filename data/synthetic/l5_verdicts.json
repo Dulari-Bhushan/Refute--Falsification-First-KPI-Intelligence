@@ -1,0 +1,102 @@
+[
+  {
+    "hypothesis_id": "h_shipping_delay",
+    "test_archetype": "placebo",
+    "dim": "fulfillment_center",
+    "n_treatment_units": 1,
+    "n_control_units": 2,
+    "did_effect": -0.07,
+    "did_se": 0.06,
+    "did_pvalue_raw": 0.23878892112389505,
+    "did_pvalue_bh": 0.47758,
+    "parallel_trends_pvalue": 0.72429801525178,
+    "parallel_trends_ok": true,
+    "mde": 0.08,
+    "plausible_effect": 0.1,
+    "verdict": "KILLED",
+    "reason": "Not significant (BH-adjusted p=0.4776), and the test had enough power to detect a plausible effect (MDE 8.0pp <= plausible 10pp) if one existed.",
+    "notes": [
+      "Pre-trends look parallel."
+    ]
+  },
+  {
+    "hypothesis_id": "h_competitor_launch",
+    "test_archetype": "specificity",
+    "dim": "product_category",
+    "n_treatment_units": 1,
+    "n_control_units": 3,
+    "did_effect": 0.05,
+    "did_se": 0.07,
+    "did_pvalue_raw": 0.4899519042506546,
+    "did_pvalue_bh": 0.53475,
+    "parallel_trends_pvalue": 0.9597583572001828,
+    "parallel_trends_ok": true,
+    "mde": 0.08,
+    "plausible_effect": 0.1,
+    "verdict": "KILLED",
+    "reason": "Not significant (BH-adjusted p=0.5347), and the test had enough power to detect a plausible effect (MDE 8.0pp <= plausible 10pp) if one existed.",
+    "notes": [
+      "Pre-trends look parallel."
+    ]
+  },
+  {
+    "hypothesis_id": "h_accessories_pricing",
+    "test_archetype": "specificity",
+    "dim": "product_category",
+    "n_treatment_units": 1,
+    "n_control_units": 3,
+    "did_effect": -0.1,
+    "did_se": 0.16,
+    "did_pvalue_raw": 0.5347543063145423,
+    "did_pvalue_bh": 0.53475,
+    "parallel_trends_pvalue": 0.8213246548684394,
+    "parallel_trends_ok": true,
+    "mde": 0.28,
+    "plausible_effect": 0.1,
+    "verdict": "INCONCLUSIVE",
+    "reason": "Not significant (BH-adjusted p=0.5347), and this test's minimum detectable effect (28.0pp) exceeds the plausible effect size (10pp) -- the test was underpowered, not evidence the effect is absent. Would need more weeks of history or more treatment units to resolve.",
+    "notes": [
+      "Pre-trends look parallel."
+    ]
+  },
+  {
+    "hypothesis_id": "h_rep_attrition",
+    "test_archetype": "placebo",
+    "dim": "rep_id",
+    "n_treatment_units": 4,
+    "n_control_units": 2,
+    "did_effect": -3.0,
+    "did_se": 0.04,
+    "did_pvalue_raw": 0.0,
+    "did_pvalue_bh": 0.0,
+    "parallel_trends_pvalue": 0.9999984790324268,
+    "parallel_trends_ok": true,
+    "mde": 1.93,
+    "plausible_effect": 0.1,
+    "verdict": "SURVIVED",
+    "reason": "BH-adjusted p=0.0000 < q=0.1; treatment moved 300.0pp more than control beyond the pre-period baseline difference -- consistent with the predicted mechanism.",
+    "notes": [
+      "Pre-trends look parallel."
+    ]
+  },
+  {
+    "hypothesis_id": "h_billing_complaints",
+    "test_archetype": "precedence",
+    "dim": "ticket_topic",
+    "n_treatment_units": 1,
+    "n_control_units": 0,
+    "did_effect": null,
+    "did_se": null,
+    "did_pvalue_raw": null,
+    "did_pvalue_bh": null,
+    "parallel_trends_pvalue": null,
+    "parallel_trends_ok": null,
+    "mde": null,
+    "plausible_effect": null,
+    "verdict": "KILLED",
+    "reason": "Candidate cause's own changepoint (week 33) comes AFTER the KPI's onset (week 32) -- this is a downstream symptom, not a cause. refutes_if condition met: effect precedes cause.",
+    "notes": [
+      "topic_changepoint_week=33 (confidence=0.86); kpi_changepoint_week=32 (confidence=0.79)"
+    ]
+  }
+]

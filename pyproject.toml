@@ -1,0 +1,16 @@
+[project]
+name = "refute"
+version = "0.1.0"
+description = "Falsification-first KPI intelligence-to-action engine"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.2",
+    "pandas>=3.0.5",
+    "pydantic>=2.13.4",
+    "pyyaml>=6.0.3",
+    "scikit-learn>=1.9.0",
+    "scipy>=1.18.1",
+    "sentence-transformers>=6.0.0",
+    "sqlglot>=30.17.0",
+    "statsmodels>=0.15.0",
+]
