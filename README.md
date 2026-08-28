@@ -6,7 +6,7 @@
 
 This README captures the accumulated context from Round 1 (accepted concept) and Round 2 (expanded prototype brief), plus the current build status. Sections 1–10 below are the original architecture/context document (still accurate as design intent); this section is the living status — check here first.
 
-> **Picking this up in a new session?** The prototype is **complete** — every item on the original build plan (§7 here, and the more detailed `.claude/plans/so-tell-me-what-federated-brook.md`) is built, validated, and committed. There is no known open gap. If you're continuing work, it's refinement (new scenarios, a real data source, letting real feedback accrue toward the 30-outcome calibration threshold), not gap-closing. Read §0 (this section) for what exists and where; §6 for the objective-by-objective coverage table; the plan file's top "STATUS UPDATE" block for the most recent session's specific changes. Run `uv run python run_pipeline.py` then `uv run uvicorn api.main:app --reload` to see it working before changing anything.
+> **Picking this up in a new session?** The prototype is **complete** — every item on the original build plan (§7 here, and the more detailed [PLAN.md](PLAN.md)) is built, validated, and committed. There is no known open gap. If you're continuing work, it's refinement (new scenarios, a real data source, letting real feedback accrue toward the 30-outcome calibration threshold), not gap-closing. Read §0 (this section) for what exists and where; §6 for the objective-by-objective coverage table; [PLAN.md](PLAN.md)'s top "STATUS UPDATE" block for the most recent session's specific changes. Run `uv run python run_pipeline.py` then `uv run uvicorn api.main:app --reload` to see it working before changing anything.
 
 ---
 
@@ -293,7 +293,7 @@ All satisfied — 5 connected KPIs across 3 sources at 3 cadences; the semantic 
 
 ## 10. Next step
 
-**Superseded by [§0](#0-implementation-status-updated-2026-08-28) above** — the gap list this section originally pointed to has been built and validated (see §0's table and worked-example results). This section is kept for history; the live plan is the one at `.claude/plans/so-tell-me-what-federated-brook.md` (see that file's own updated status/next-step sections), and the actionable next-step list is:
+**Superseded by [§0](#0-implementation-status-updated-2026-08-28) above** — the gap list this section originally pointed to has been built and validated (see §0's table and worked-example results). This section is kept for history; the live plan is [PLAN.md](PLAN.md) (see that file's own updated status/next-step sections), and the actionable next-step list is:
 
 1. ~~Live LLM wiring~~ — **done** (`engine/l4_llm_generation.py`, Qwen2.5-3B-Instruct on local GPU via `outlines`).
 2. ~~Minimal UI~~ — **done**, now with three persona views, a methods-breakdown panel, and both Tier 3 stretch features rendered live (`api/main.py` + `ui/`, `uv run uvicorn api.main:app --reload`).
