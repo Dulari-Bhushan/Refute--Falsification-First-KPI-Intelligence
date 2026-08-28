@@ -6,6 +6,8 @@
 
 This README captures the accumulated context from Round 1 (accepted concept) and Round 2 (expanded prototype brief), plus the current build status. Sections 1–10 below are the original architecture/context document (still accurate as design intent); this section is the living status — check here first.
 
+> **Picking this up in a new session?** The prototype is **complete** — every item on the original build plan (§7 here, and the more detailed `.claude/plans/so-tell-me-what-federated-brook.md`) is built, validated, and committed. There is no known open gap. If you're continuing work, it's refinement (new scenarios, a real data source, letting real feedback accrue toward the 30-outcome calibration threshold), not gap-closing. Read §0 (this section) for what exists and where; §6 for the objective-by-objective coverage table; the plan file's top "STATUS UPDATE" block for the most recent session's specific changes. Run `uv run python run_pipeline.py` then `uv run uvicorn api.main:app --reload` to see it working before changing anything.
+
 ---
 
 ## 0. Implementation status (updated 2026-08-28)
