@@ -27,10 +27,11 @@
     </div>
 
     <div class="panel">
-      <h2>Narrated Brief</h2>
+      <h2>Narrated Brief &mdash; Three Stakeholder Views</h2>
       <div class="persona-tabs">
-        <button class="persona-tab active" data-role="ops_manager_west">West Ops Manager</button>
-        <button class="persona-tab" data-role="regional_vp">Regional VP</button>
+        <button class="persona-tab active" data-role="regional_vp">Leader</button>
+        <button class="persona-tab" data-role="ops_manager_west">Manager</button>
+        <button class="persona-tab" data-role="platform_engineer">Engineer</button>
       </div>
       <div id="briefContent">Loading&hellip;</div>
       <div class="role-note" id="roleNote"></div>
@@ -42,9 +43,23 @@
     <div class="cards" id="hypothesisCards"><div class="loading">Loading&hellip;</div></div>
   </div>
 
-  <div class="panel" id="actionPanel">
-    <h2>Recommended Action</h2>
-    <div id="actionContent" class="loading">Loading&hellip;</div>
+  <div class="panel" id="adversarialPanel" style="display:none">
+    <h2>Adversarial Challenge (Tier 3 stretch feature)</h2>
+    <p class="subtext">Before trusting the SURVIVED verdict, the model was asked to argue the other side: propose the strongest counter-explanation it could construct, using a different dimension, and that challenge was run through the identical L4/L5 pipeline too.</p>
+    <div id="adversarialContent" class="loading">Loading&hellip;</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel" id="actionPanel">
+      <h2>Recommended Action</h2>
+      <div id="actionContent" class="loading">Loading&hellip;</div>
+    </div>
+
+    <div class="panel">
+      <h2>Counterfactual Projection (Tier 3 stretch feature)</h2>
+      <p class="subtext" id="counterfactualAssumption"></p>
+      <canvas id="counterfactualChart"></canvas>
+    </div>
   </div>
 
   <div class="grid-2">
@@ -57,6 +72,12 @@
       <h2>Runtime Telemetry &mdash; LLM vs. Deterministic</h2>
       <div id="telemetryStrip" class="loading">Loading&hellip;</div>
     </div>
+  </div>
+
+  <div class="panel">
+    <h2>Methods Breakdown &mdash; Why Each Layer Uses What It Uses</h2>
+    <p class="subtext">"The LLM should not be treated as the source of quantitative truth." Every pipeline stage declares its own method category here &mdash; imported directly from the code (<code>engine/methods_registry.py</code>), not restated, and structurally checked so no LLM-driven stage is ever marked as a quantitative source of truth.</p>
+    <div id="methodsBreakdown" class="loading">Loading&hellip;</div>
   </div>
 
   <div class="panel">

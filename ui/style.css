@@ -85,7 +85,7 @@ main {
 .badge.pass { background: rgba(52, 199, 142, 0.15); color: var(--survived); }
 .subtext { color: var(--text-dim); font-size: 13px; }
 
-canvas#kpiChart { width: 100%; height: 220px; }
+canvas#kpiChart, canvas#counterfactualChart { width: 100%; height: 220px; }
 
 .persona-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
 .persona-tab {

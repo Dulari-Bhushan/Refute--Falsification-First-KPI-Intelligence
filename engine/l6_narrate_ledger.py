@@ -48,6 +48,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pandas as pd
 import yaml
 
 from engine.l4_compiler import PredicateRejected, check_entitlement, validate_predicate
@@ -189,6 +190,58 @@ def build_action_recommendation(l2_results: dict, survived_outcome) -> dict:
 
 
 # --------------------------------------------------------------------------
+# Tier 3 stretch feature: visible counterfactual projection. The ledger
+# already stores a predicted direction/magnitude per verdict (for later
+# Brier scoring once outcomes accrue); this turns that into an actual
+# forward-projected trajectory -- "if the recommendation is followed, here
+# is what we'd expect to see, and here is the band we'd need to fall
+# outside of to say it didn't work" -- rather than a single number buried
+# in a database row. It's a projection under a stated assumption, not a
+# guarantee -- the label says so, deliberately, every time this renders.
+# --------------------------------------------------------------------------
+
+
+def build_counterfactual_projection(region: str = "West", weeks_ahead: int = 4) -> dict:
+    """Projects two scenarios forward from the last observed week:
+    "if nothing changes" (flat continuation of the recent post-attrition
+    level) vs. "if the recommended action succeeds" (linear recovery
+    toward the pre-attrition baseline over `weeks_ahead` weeks). The
+    confidence band comes from the pre-period's own week-to-week noise
+    (not from the DiD standard error, which is measured on a different
+    panel -- rep-level, not region-level -- and would not be the right
+    scale for a region-total revenue band)."""
+    panel = pd.read_csv(DATA_DIR / "reconciled_weekly.csv")
+    west = panel[panel.region == region].sort_values("week")
+
+    pre = west[(west.week >= 26) & (west.week <= 30)]["revenue"]
+    recent = west[(west.week >= 36) & (west.week <= 40)]["revenue"]
+    last_week = int(west["week"].max())
+
+    pre_baseline = float(pre.mean())
+    current_level = float(recent.mean())
+    weekly_sd = float(pre.std(ddof=1)) if len(pre) > 1 else 0.0
+
+    weeks = list(range(last_week + 1, last_week + 1 + weeks_ahead))
+    no_action, recovery = [], []
+    for i, wk in enumerate(weeks, start=1):
+        frac = i / weeks_ahead
+        no_action.append({"week": wk, "value": round(current_level, 2), "ci_low": round(current_level - 1.645 * weekly_sd, 2), "ci_high": round(current_level + 1.645 * weekly_sd, 2)})
+        projected = current_level + frac * (pre_baseline - current_level)
+        recovery.append({"week": wk, "value": round(projected, 2), "ci_low": round(projected - 1.645 * weekly_sd, 2), "ci_high": round(projected + 1.645 * weekly_sd, 2)})
+
+    return {
+        "region": region,
+        "last_observed_week": last_week,
+        "pre_attrition_baseline_usd": round(pre_baseline, 2),
+        "current_level_usd": round(current_level, 2),
+        "weekly_noise_sd_usd": round(weekly_sd, 2),
+        "assumption": f"IF the recommended action (account reassignment) succeeds, revenue recovers linearly toward the pre-attrition baseline (${pre_baseline:,.0f}/wk) over {weeks_ahead} weeks. This is a projection under a stated assumption, not a guarantee -- it will be scored against the actual outcome once observed (see the ledger's predicted_direction/predicted_magnitude_pct fields).",
+        "scenario_no_action": no_action,
+        "scenario_recovery": recovery,
+    }
+
+
+# --------------------------------------------------------------------------
 # Persona rendering -- one ledger, two views. Entitlements are checked
 # BEFORE rendering, not filtered out of an already-built response.
 # --------------------------------------------------------------------------
@@ -237,6 +290,49 @@ def render_vp_brief(outcomes: list, action: dict, role: str, region: str, contra
         lines.append("\n(Rep-level detail available to this role.)")
     except Exception as e:  # noqa: BLE001
         lines.append(f"\n(Rep-level account detail withheld: {e})")
+    return "\n".join(lines)
+
+
+def render_engineer_brief(outcomes: list, action: dict, telemetry_rows: list[dict]) -> str:
+    """The third stakeholder view. Not "the ops manager's brief with more
+    decimals" -- a different JOB, auditing the pipeline itself, so it shows
+    what the ops/VP briefs deliberately omit: per-test statistical
+    machinery (effect, both raw and BH-adjusted p, MDE vs. the plausible
+    floor, the parallel-trends check that gates whether a verdict was even
+    licensed), the method each stage used and why (see
+    engine/methods_registry.py -- imported directly, not restated, so this
+    can't drift from what the code actually declares), and the real LLM
+    call telemetry for this run. This is the view that makes "the LLM
+    never touches the numbers" a checkable claim, not a slogan."""
+    from engine.methods_registry import REGISTRY, assert_llm_not_quantitative_source
+
+    assert_llm_not_quantitative_source()  # re-checked at render time, not just at import -- a stale claim here would be worse than no claim
+
+    lines = ["=== Platform Engineer brief (full statistical + methodological audit) ===", ""]
+    lines.append("Per-hypothesis statistical detail:")
+    for o in outcomes:
+        lines.append(f"  {o.hypothesis_id} [{o.verdict}] archetype={o.test_archetype} dim={o.dim}")
+        if o.did_effect is not None:
+            lines.append(f"    effect={o.did_effect:+.3f}  p_raw={o.did_pvalue_raw:.4f}  p_BH={o.did_pvalue_bh}")
+            lines.append(f"    MDE={o.mde}  plausible_floor={o.plausible_effect}  parallel_trends_p={o.parallel_trends_pvalue}")
+        lines.append(f"    n_treatment_units={o.n_treatment_units} n_control_units={o.n_control_units}")
+        for n in o.notes:
+            lines.append(f"    note: {n}")
+
+    lines.append("\nMethod-per-stage (method_category -- why, not LLM):")
+    for e in REGISTRY:
+        flag = "Q" if e.quantitative_output else "-"
+        lines.append(f"  [{flag}] {e.stage}: {e.method_category} ({e.method_name})")
+    lines.append("  Q = this stage's output is trusted as a quantitative fact downstream. No LLM row is marked Q -- checked programmatically above, not just asserted here.")
+
+    llm_rows = [r for r in telemetry_rows if r.get("is_llm_call")]
+    det_rows = [r for r in telemetry_rows if not r.get("is_llm_call")]
+    lines.append(f"\nTelemetry this run: {len(llm_rows)} LLM call(s), {len(det_rows)} deterministic stage(s).")
+    if llm_rows:
+        total_tokens = sum((r.get("tokens_in") or 0) + (r.get("tokens_out") or 0) for r in llm_rows)
+        total_latency = sum(r.get("latency_ms") or 0 for r in llm_rows)
+        lines.append(f"  LLM: {total_tokens} tokens total, {total_latency:.0f}ms total, $0.0000 actual (local GPU)")
+
     return "\n".join(lines)
 
 
@@ -324,20 +420,33 @@ def main() -> None:
 
     l2_results = json.loads((DATA_DIR / "l2_localisation_results.json").read_text())
     survived_outcome = next((o for o in outcomes if o.verdict == "SURVIVED"), None)
+
+    # queried once, across the WHOLE ledger (not just this run_id) so the
+    # engineer view and the printed breakdown both see LLM calls made by
+    # engine/l4_llm_generation.py's separate run_id too, if that step has
+    # ever been run -- an engineer auditing the system wants the full
+    # picture, not just this invocation's slice of it.
+    ledger.row_factory = sqlite3.Row
+    all_telemetry = [dict(r) for r in ledger.execute("SELECT * FROM telemetry ORDER BY id DESC LIMIT 500").fetchall()]
+    ledger.row_factory = None
+
     with telemetry_span(ledger, run_id, "L6_narrate", is_llm_call=False):
         action = build_action_recommendation(l2_results, survived_outcome)
         ops_brief = render_ops_manager_brief(outcomes, action)
         vp_brief = render_vp_brief(outcomes, action, role="regional_vp", region="West", contract=contract)
+        engineer_brief = render_engineer_brief(outcomes, action, all_telemetry)
 
     print(ops_brief)
     print()
     print(vp_brief)
+    print()
+    print(engineer_brief)
 
     # --- LLM vs. non-LLM breakdown -- literal telemetry, not a design claim ---
     rows = ledger.execute("SELECT stage, is_llm_call, latency_ms, estimated_cost_usd FROM telemetry WHERE run_id=?", (run_id,)).fetchall()
     total_latency = sum(r[2] for r in rows)
     llm_calls = [r for r in rows if r[1]]
-    print("\n=== Runtime telemetry ===")
+    print("\n=== Runtime telemetry (this run only) ===")
     print(f"Run {run_id}: {len(rows)} stages, {len(llm_calls)} LLM call(s), {total_latency:.0f}ms total, ${sum(r[3] for r in rows):.4f} estimated cost")
     for stage, is_llm, latency, cost in rows:
         print(f"  {stage:<20} {'LLM' if is_llm else 'deterministic':<14} {latency:>8.1f}ms  ${cost:.4f}")

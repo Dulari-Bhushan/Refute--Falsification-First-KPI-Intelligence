@@ -32,7 +32,8 @@ uv run uvicorn api.main:app --reload        # then open http://127.0.0.1:8000 --
 | L5 Adjudicate | [engine/l5_adjudicate.py](engine/l5_adjudicate.py) | DiD (log-scale, unit fixed effects, cluster-robust → HC1 fallback below 4 clusters/side), mandatory parallel-trends check, the power gate, BH-FDR correction |
 | L6 Narrate + Ledger | [engine/l6_narrate_ledger.py](engine/l6_narrate_ledger.py) | Structured action template, persona rendering (2 roles, entitlement-filtered), SQLite ledger, telemetry, feedback-as-falsification-event |
 | L4 Live LLM generation | [engine/l4_llm_generation.py](engine/l4_llm_generation.py) | Local GPU (Qwen2.5-3B-Instruct via `outlines`, token-level schema-constrained decoding), two-gate validation (schema + semantic domain), graceful fallback, real telemetry |
-| Web UI | [api/main.py](api/main.py), [ui/](ui/) | FastAPI backend reading the pipeline's own JSON/SQLite output (no separate analysis logic) + a static dashboard: KPI chart with changepoint marker, hypothesis cards, persona toggle (with a *real* `check_entitlement` call behind the entitlement note, not a hardcoded guess), evidence/freshness table, telemetry strip, live feedback-loop demo |
+| Web UI | [api/main.py](api/main.py), [ui/](ui/) | FastAPI backend reading the pipeline's own JSON/SQLite output (no separate analysis logic) + a static dashboard: KPI chart with changepoint marker, hypothesis cards, **three** persona views (Leader/Manager/Engineer, with a *real* `check_entitlement` call behind each entitlement note), evidence/freshness table, telemetry strip, methods-breakdown table, counterfactual projection chart, adversarial-challenge panel, live feedback-loop demo |
+| Methods registry | [engine/methods_registry.py](engine/methods_registry.py) | Single source of truth for which method category (deterministic logic / SQL / business rules / statistics / traditional ML / causal inference / LLM) each stage uses and why, with a structural check that no LLM stage is ever marked a quantitative source of truth — imported directly by the UI and the Engineer persona view, not restated |
 
 ### The canonical worked example, actually running
 
@@ -71,9 +72,8 @@ Documented in the code where they were found, since they're the kind of thing wo
 
 ### What's NOT built yet
 
-- **Reconciliation-as-falsification for row/column security beyond the one entitlement demo.** The role-based scenario works (`regional_vp` denied rep-level detail, `ops_manager_west` allowed) but only two roles/one denial path are wired up.
 - **Ledger calibration.** Brier score / reliability diagram / isotonic recalibration code isn't written yet — needs ~30 scored outcomes to be meaningful anyway (honesty note already printed by `l6_narrate_ledger.py`).
-- **Tier 3 stretch features** (visible counterfactual projection, adversarial counter-hypothesis generation) — not started, reach-only per the original plan.
+- **Scalability testing.** See §6's objective-8 row — nothing here has been run against more than the ~9K-row synthetic dataset; this is the one honest remaining gap, not something faked with a load-test claim.
 
 ### Structural note
 
@@ -200,26 +200,37 @@ No production/scraped data — **synthetic and hand-authored is a requirement, n
 
 ---
 
-## 6. Round 2 gap-check against the Round 1 design
+## 6. Round 2 coverage — final status (updated 2026-08-28)
 
-The Round 2 brief expands the ask beyond what the Round 1 architecture explicitly covers. The falsification engine (L1–L6) satisfies most of the *analytical* requirements well already; the gaps are mostly in **multi-source reconciliation, persona/security framing, feedback loop, and telemetry** — real additional work, not just renaming existing pieces.
+This section originally tracked gaps between the Round 1 design and the Round 2 brief *before* any of it was built (see git history if you want that snapshot). It's now a straight coverage check against what's actually running.
 
-| Round 2 requirement | Covered by Round 1 design? | Notes / what's still needed |
-|---|---|---|
-| 1. Detect & prioritise material KPI movements | ✅ L1 (BOCPD) + materiality = statistical (posterior) × business impact | Need to make "business impact" weighting explicit (currently implied, not scored) |
-| 2. Reconcile data/context across heterogeneous sources | ⚠️ Partial | Round 1 assumes one clean synthetic table + tickets. Round 2 wants **3–5 KPIs across 2–3 sources with different grains/cadences** — needs an explicit reconciliation/join layer, not just a single wide table |
-| 3. Identify & rank explanatory drivers | ✅ L2 (localisation) + L3 (hypothesis gen) + L4/L5 (falsification, not ranking) | Already the project's core differentiator |
-| 4. Persona-specific narratives with traceable evidence | ❌ Not designed yet | Round 1's L6 narrator is single-voice. Need ≥2 personas (e.g. analyst vs. exec, or category manager vs. ops) with different depth/action framing from the same ledger evidence |
-| 5. Communicate uncertainty, abstain when insufficient/contradictory | ✅ Core mechanic — INCONCLUSIVE verdict, power gate, BH correction | Already the strongest-covered requirement |
-| 6. Recommend actions grounded in levers/constraints/decision rights | ⚠️ Partial | L6 brief includes "what to do" but not yet structured as `driver → controllable lever → action → expected impact → owner → confidence → monitoring plan` per the Round 2 template — worth adopting that exact structure |
-| 7. Learn from analyst/business-user feedback | ❌ Not designed yet | Ledger (L6) scores against *actual outcomes*, but there's no explicit human-feedback/correction capture (e.g. "this verdict was wrong," "wrong persona framing") feeding back into the system |
-| 8. Security, cost, latency, scalability constraints | ⚠️ Partial | Cost/latency: L1's gate (no LLM call on noise) + sub-60s target are real cost controls. **Row/column/domain-level security and entitlements are not designed at all** — needed for the Round 2 "role-based security or entitlement scenario" |
-| KPI/semantic contract (definitions, calculations, drivers, thresholds, lineage, access) | ❌ Not designed yet | Round 1 has an implicit schema (whitelisted tables for L4) but no formal lightweight semantic contract artifact |
-| Sparse-history / newly-launched KPI scenario | ❌ Not designed yet | Needs a 4th planted scenario in the synthetic dataset alongside the 3 decoys |
-| Runtime telemetry (latency, model calls, tokens, cost) | ❌ Not designed yet | Ledger currently tracks statistical provenance, not LLM ops metrics — needs a telemetry layer alongside it |
-| LLM vs. non-LLM breakdown | ✅ Already a core design principle (L4: LLM proposes predicate, deterministic compiler executes) | Just needs to be surfaced visibly in the UI/output, not only in architecture docs |
+### The 8 objectives
 
-**Net read:** REFUTE's falsification mechanic is a strong, differentiated answer to Round 2 requirements 3, 5, and most of 1 and 6 — that's the hard analytical core and it's already well thought through. What's missing for full Round 2 coverage is mostly *scaffolding around* that core: multi-source data reconciliation, persona narration, a feedback-capture loop, entitlements/security, a semantic contract, and telemetry. None of these break the core architecture — they're additive layers/artifacts, not redesigns.
+| # | Objective | Status | Where |
+|---|---|---|---|
+| 1 | Detect & prioritise material KPI movements | ✅ | L1's BOCPD posterior × business-impact-vs-baseline gate (`engine/l1_signal.py`) |
+| 2 | Reconcile data/context across heterogeneous sources | ✅ | `data/reconciliation.py` — 3 cadences resampled to a common grain, freshness tracked, cross-source agreement tested as a falsifiable claim |
+| 3 | Identify & rank explanatory drivers using appropriate analytical methods | ✅ | L2 (exact decomposition + Shapley) locates *where*; L4/L5 (falsification, not ranking) decide *why* — see the methods-registry note below for exactly which method did which job |
+| 4 | Generate persona-specific narratives supported by traceable evidence | ✅ | **Three** stakeholder views (exceeds the ≥2 minimum) — Leader, Manager, Engineer — one ledger, three renderers, entitlement-checked live |
+| 5 | Communicate uncertainty and abstain when evidence is insufficient/contradictory | ✅ | The project's strongest-covered requirement from day one: INCONCLUSIVE verdict, the power gate, BH correction |
+| 6 | Recommend practical actions grounded in business levers, constraints, decision rights | ✅ | `driver → controllable lever → action → expected impact → owner → confidence → monitoring plan`, populated from real L2/L5 numbers, not placeholder text |
+| 7 | Mechanism to learn from analyst and business-user feedback | ✅ | Feedback-as-falsification-event: a correction becomes a new predicate, run through the identical L4/L5 pipeline, not a lighter-weight approval flow |
+| 8 | Operate within realistic security, cost, latency and scalability constraints | ⚠️ Partial | Security: real (compile-time entitlement checks, 3 roles with distinct row/column scope). Cost/latency: real telemetry, $0 marginal LLM cost via local GPU, sub-minute end-to-end runtime. **Scalability is the one honest gap** — this has only ever been run against a ~9K-row synthetic dataset; nothing here demonstrates behavior at production data volumes (e.g. whether the O(m·n) Shapley sampling or the per-topic BOCPD scan in L3 stay fast at 1000x the ticket/transaction volume). Flagging this rather than claiming it, since nothing in the build actually tests it. |
+
+### "The LLM should not be treated as the source of quantitative truth"
+
+Answered structurally, not just asserted: [`engine/methods_registry.py`](engine/methods_registry.py) is a single table every pipeline stage declares itself against — which method category (deterministic logic / SQL / business rules / statistics / traditional ML / causal inference / LLM) it uses, and why, with a `quantitative_output` flag per stage. `assert_llm_not_quantitative_source()` checks programmatically that no LLM-driven stage is marked as a source of quantitative truth — it fails loudly if that's ever violated, rather than relying on someone remembering to keep the docs honest. The one `llm` row in the registry (mechanism + predicate *proposal*, Qwen2.5-3B-Instruct) is explicitly `quantitative_output: False`: an LLM proposal is re-validated (schema + semantic domain gates) and then *tested* by deterministic/statistical machinery before any verdict exists — it never gets to just assert an answer. The UI's "Methods Breakdown" panel and the Engineer persona view both render this table live from the code, not from a copy of it.
+
+Retrieval gets the same treatment: L3's ticket-topic clustering is explicitly *not* naive RAG (see `engine/l3_hypothesise.py`'s docstring) — retrieving tickets from the anomaly window is fatally biased since ticket volume moves in every bad week regardless of cause, so a topic only becomes a candidate if it has its own independent BOCPD changepoint that precedes the KPI's, checked structurally, not left to an LLM's judgment.
+
+### Minimum prototype expectations
+
+All satisfied — 5 connected KPIs across 3 sources at 3 cadences; the semantic contract (`semantic/kpi_contract.yaml`); 3 personas; the canonical multi-factor worked example; the accessories-pricing low-confidence/abstain scenario; the Outdoor sparse-history scenario; the `regional_vp` role-based entitlement denial (now alongside a third `platform_engineer` role); the evidence panel (freshness/method/contribution/confidence/lineage together); the LLM-vs-non-LLM breakdown (telemetry strip + methods registry); runtime telemetry (latency, real token counts, real model calls, $0 actual cost with a hosted-API cost comparison for context).
+
+### Beyond the brief (Tier 3 stretch, not required but built)
+
+- **Visible counterfactual projection** (`build_counterfactual_projection` in `engine/l6_narrate_ledger.py`) — a forward-projected recovery band under a stated assumption, not a guarantee, rendered as a chart.
+- **Adversarial counter-hypothesis generation** (`generate_adversarial_challenge` in `engine/l4_llm_generation.py`) — before trusting a SURVIVED verdict, the model is asked to argue the strongest opposing case using a different dimension, and that challenge is run through the identical L4/L5 pipeline. In practice it has reliably rediscovered the same decoy structures (a competitor/operating-cost story) and been correctly KILLED — the surviving conclusion holding up against the best counter-case the model itself could construct.
 
 ---
 
@@ -269,7 +280,7 @@ The Round 2 brief expands the ask beyond what the Round 1 architecture explicitl
 
 **Superseded by [§0](#0-implementation-status-updated-2026-08-28) above** — the gap list this section originally pointed to has been built and validated (see §0's table and worked-example results). This section is kept for history; the live plan is the one at `.claude/plans/so-tell-me-what-federated-brook.md` (see that file's own updated status/next-step sections), and the actionable next-step list is:
 
-1. ~~Live LLM wiring~~ — **done**, see [§0's live-LLM section](#live-llm-predicate-generation-also-actually-running) above (`engine/l4_llm_generation.py`, Qwen2.5-3B-Instruct on local GPU via `outlines`).
-2. ~~Minimal UI~~ — **done**, `api/main.py` + `ui/` (`uv run uvicorn api.main:app --reload`): KPI series with a changepoint marker, hypothesis cards, persona toggle with a real (not hardcoded) entitlement check, evidence/freshness table, telemetry strip, and a working feedback-loop demo, all reading the pipeline's existing JSON/SQLite output.
-3. **Tier 3 stretch features** (visible counterfactual projection, adversarial counter-hypothesis generation) — now the top of the remaining list, per the original plan's own sequencing.
-4. Ledger calibration scoring (Brier score, reliability diagram) once real scored outcomes accrue — not before, per the honesty constraint already enforced in `l6_narrate_ledger.py`.
+1. ~~Live LLM wiring~~ — **done** (`engine/l4_llm_generation.py`, Qwen2.5-3B-Instruct on local GPU via `outlines`).
+2. ~~Minimal UI~~ — **done**, now with three persona views, a methods-breakdown panel, and both Tier 3 stretch features rendered live (`api/main.py` + `ui/`, `uv run uvicorn api.main:app --reload`).
+3. ~~Tier 3 stretch features~~ — **done**: visible counterfactual projection (`build_counterfactual_projection`) and adversarial counter-hypothesis generation (`generate_adversarial_challenge`), both in the UI.
+4. Ledger calibration scoring (Brier score, reliability diagram) once real scored outcomes accrue — not before, per the honesty constraint already enforced in `l6_narrate_ledger.py`. This and scalability testing (§6, objective 8) are the only two items left on the list.

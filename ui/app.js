@@ -4,8 +4,10 @@ let STATE = {
   hypotheses: [],
   action: null,
   region: "West",
-  role: "ops_manager_west",
+  role: "regional_vp",
 };
+
+const ROLE_LABELS = { regional_vp: "Leader", ops_manager_west: "Manager", platform_engineer: "Engineer" };
 
 async function getJSON(path) {
   const res = await fetch(API + path);
@@ -159,6 +161,11 @@ function renderTelemetry(data) {
 }
 
 // ---------------------------------------------------------------- persona brief
+// Three renderers over the SAME ledger data (STATE.hypotheses / STATE.action)
+// -- personalization here is a filtering/formatting decision, not a
+// re-analysis. Only the entitlement note comes from a live API call, since
+// that's a real access-control decision (engine.l4_compiler.check_entitlement),
+// not something the frontend should ever decide on its own.
 async function renderBrief(role) {
   const briefEl = document.getElementById("briefContent");
   const noteEl = document.getElementById("roleNote");
@@ -168,21 +175,36 @@ async function renderBrief(role) {
 
   const ent = await getJSON(`/api/entitlement-check?role=${role}&dim=rep_id&region=${STATE.region}`);
 
-  if (role === "ops_manager_west") {
-    briefEl.innerHTML = `
-      <div class="brief-line"><span class="brief-label">Movement</span><div>${STATE.kpiNarrative || ""}</div></div>
-      <div class="brief-line"><span class="brief-label">Cause</span><div>${survived ? survived.hypothesis_id : "none confirmed"}</div></div>
-      <div class="brief-line"><span class="brief-label">Ruled out</span><div>${killed.map((h) => h.hypothesis_id).join(", ") || "none"}</div></div>
-      <div class="brief-line"><span class="brief-label">Inconclusive</span><div>${inconclusive.map((h) => h.hypothesis_id).join(", ") || "none"}</div></div>
-      ${STATE.action && STATE.action.has_action ? `<div class="brief-line"><span class="brief-label">Action</span><div>${STATE.action.action.action}</div></div>` : ""}
-    `;
-  } else {
+  if (role === "regional_vp") {
+    // LEADER: headline + one action + confidence, no statistical detail.
     briefEl.innerHTML = `
       <div class="brief-line"><span class="brief-label">Headline</span><div>${STATE.kpiNarrative || ""}</div></div>
       ${survived ? `<div class="brief-line"><span class="brief-label">Cause</span><div>${survived.hypothesis_id.replace("h_", "").replace(/_/g, " ")}</div></div>` : ""}
       <div class="brief-line"><span class="brief-label">Tested &amp; ruled out</span><div>${killed.length} alternative(s)${inconclusive.length ? `, ${inconclusive.length} inconclusive` : ""}</div></div>
       ${STATE.action && STATE.action.has_action ? `<div class="brief-line"><span class="brief-label">Next step</span><div>${STATE.action.action.action}</div></div>` : ""}
+      ${STATE.action && STATE.action.has_action ? `<div class="brief-line"><span class="brief-label">Confidence</span><div>${STATE.action.action.confidence.split(" -- ")[0]}</div></div>` : ""}
     `;
+  } else if (role === "ops_manager_west") {
+    // MANAGER: full evidence chain for their own region, tactical action framing.
+    briefEl.innerHTML = `
+      <div class="brief-line"><span class="brief-label">Movement</span><div>${STATE.kpiNarrative || ""}</div></div>
+      <div class="brief-line"><span class="brief-label">Cause</span><div>${survived ? survived.hypothesis_id : "none confirmed"}</div></div>
+      <div class="brief-line"><span class="brief-label">Ruled out</span><div>${killed.map((h) => `${h.hypothesis_id} (${h.test_archetype})`).join(", ") || "none"}</div></div>
+      <div class="brief-line"><span class="brief-label">Inconclusive</span><div>${inconclusive.map((h) => h.hypothesis_id).join(", ") || "none"}</div></div>
+      ${STATE.action && STATE.action.has_action ? `<div class="brief-line"><span class="brief-label">Action</span><div>${STATE.action.action.action}</div></div>` : ""}
+      ${STATE.action && STATE.action.has_action ? `<div class="brief-line"><span class="brief-label">Owner</span><div>${STATE.action.action.owner}</div></div>` : ""}
+    `;
+  } else {
+    // ENGINEER: full statistical + methodological audit.
+    const rows = STATE.hypotheses
+      .map((h) => {
+        const stats = h.did_effect !== null && h.did_effect !== undefined
+          ? `effect=${fmtPct(h.did_effect)} p_raw=${h.did_pvalue_raw?.toFixed(4) ?? "n/a"} p_BH=${h.did_pvalue_bh?.toFixed(4) ?? "n/a"} MDE=${fmtPct(h.mde)} floor=${fmtPct(h.plausible_effect)} pretrends_p=${h.parallel_trends_pvalue?.toFixed(3) ?? "n/a"}`
+          : "(precedence test -- no DiD regression, see notes)";
+        return `<div class="brief-line"><span class="brief-label">${h.hypothesis_id} [${h.verdict}]</span><div style="font-family:var(--mono);font-size:11px">${stats}</div></div>`;
+      })
+      .join("");
+    briefEl.innerHTML = `${rows}<div class="brief-line" style="margin-top:10px"><span class="brief-label">Note</span><div>See Methods Breakdown below for which method category (statistics / SQL / causal inference / LLM / etc.) produced each number, and why.</div></div>`;
   }
 
   noteEl.className = `role-note ${ent.allowed ? "allowed" : "denied"}`;
@@ -191,14 +213,129 @@ async function renderBrief(role) {
     : `Rep-level account detail withheld: ${ent.reason}`;
 }
 
+// ---------------------------------------------------------------- methods breakdown
+function renderMethodsBreakdown(data) {
+  const el = document.getElementById("methodsBreakdown");
+  const rows = data.entries
+    .map(
+      (e) => `<tr>
+      <td>${e.stage}</td>
+      <td><span style="text-transform:uppercase;font-size:10px;letter-spacing:.04em;color:${e.method_category === "llm" ? "var(--accent)" : "var(--text-dim)"}">${e.method_category.replace(/_/g, " ")}</span></td>
+      <td>${e.method_name}</td>
+      <td>${e.quantitative_output ? '<span style="color:var(--survived)">yes</span>' : '<span style="color:var(--text-faint)">no</span>'}</td>
+    </tr>`
+    )
+    .join("");
+  el.innerHTML = `<table class="evidence-table">
+    <thead><tr><th>Stage</th><th>Method category</th><th>Method</th><th>Quantitative source of truth?</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <p class="subtext" style="margin-top:10px">${data.llm_stages_are_never_quantitative ? "Structurally checked: no LLM-driven stage is marked as a quantitative source of truth." : ""}</p>`;
+}
+
+// ---------------------------------------------------------------- counterfactual chart
+function drawCounterfactualChart(canvas, cf) {
+  const ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight || 200;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  const allVals = [...cf.scenario_no_action, ...cf.scenario_recovery].flatMap((d) => [d.ci_low, d.ci_high]);
+  const min = Math.min(...allVals) * 0.98, max = Math.max(...allVals) * 1.02;
+  const padL = 46, padR = 12, padT = 12, padB = 20;
+  const n = cf.scenario_no_action.length;
+  const xFor = (i) => padL + (i / Math.max(n - 1, 1)) * (w - padL - padR);
+  const yFor = (v) => padT + (1 - (v - min) / (max - min)) * (h - padT - padB);
+
+  ctx.strokeStyle = "#232a3a";
+  ctx.fillStyle = "#5b6478";
+  ctx.font = "10px sans-serif";
+  for (let i = 0; i <= 2; i++) {
+    const v = min + (i / 2) * (max - min);
+    const y = yFor(v);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+    ctx.fillText(`$${Math.round(v / 1000)}k`, 4, y + 3);
+  }
+
+  const drawSeries = (series, color, dashed) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash(dashed ? [5, 3] : []);
+    ctx.beginPath();
+    series.forEach((d, i) => {
+      const x = xFor(i), y = yFor(d.value);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // CI band
+    ctx.fillStyle = color + "22";
+    ctx.beginPath();
+    series.forEach((d, i) => ctx.lineTo(xFor(i), yFor(d.ci_high)));
+    for (let i = series.length - 1; i >= 0; i--) ctx.lineTo(xFor(i), yFor(series[i].ci_low));
+    ctx.closePath();
+    ctx.fill();
+  };
+
+  drawSeries(cf.scenario_no_action, "#8993a8", true);
+  drawSeries(cf.scenario_recovery, "#34c78e", false);
+
+  ctx.fillStyle = "#5b6478";
+  cf.scenario_no_action.forEach((d, i) => ctx.fillText(`w${d.week}`, xFor(i) - 6, h - 4));
+
+  ctx.fillStyle = "#8993a8"; ctx.fillText("- - if no action", padL, padT + 8);
+  ctx.fillStyle = "#34c78e"; ctx.fillText("— if action succeeds", padL, padT + 20);
+}
+
+function renderCounterfactual(cf) {
+  document.getElementById("counterfactualAssumption").textContent = cf.assumption;
+  const canvas = document.getElementById("counterfactualChart");
+  const redraw = () => drawCounterfactualChart(canvas, cf);
+  redraw();
+  let resizeTimer;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(redraw, 120);
+  });
+  setTimeout(redraw, 300);
+}
+
+// ---------------------------------------------------------------- adversarial challenge
+function renderAdversarial(data) {
+  const panel = document.getElementById("adversarialPanel");
+  const el = document.getElementById("adversarialContent");
+  if (!data.challenges || data.challenges.length === 0) {
+    panel.style.display = "none";
+    return;
+  }
+  panel.style.display = "";
+  el.innerHTML = data.challenges
+    .map((c) => {
+      const meaning = c.verdict === "SURVIVED"
+        ? "The original conclusion is more contested than a single surviving test suggested -- both should be reviewed."
+        : "The original conclusion held up against the strongest counter-case the model could construct.";
+      return `<div class="brief-line">
+        <span class="brief-label">${c.hypothesis_id}</span>
+        <div><span class="verdict-badge ${verdictClass(c.verdict)}">${c.verdict}</span> ${c.reason}</div>
+        <div class="subtext" style="margin-top:4px">${meaning}</div>
+      </div>`;
+    })
+    .join("");
+}
+
 // ---------------------------------------------------------------- init
 async function init() {
-  const [kpi, hypData, action, evidence, telemetry] = await Promise.all([
+  const [kpi, hypData, action, evidence, telemetry, methods, counterfactual, adversarial] = await Promise.all([
     getJSON(`/api/kpi-series?region=${STATE.region}&kpi=revenue`),
     getJSON("/api/hypotheses"),
     getJSON("/api/action-recommendation"),
     getJSON("/api/evidence"),
     getJSON("/api/telemetry"),
+    getJSON("/api/methods-breakdown"),
+    getJSON(`/api/counterfactual?region=${STATE.region}`),
+    getJSON("/api/adversarial-challenges"),
   ]);
 
   document.getElementById("kpiValue").textContent = fmtPct(kpi.business_impact_pct);
@@ -232,6 +369,9 @@ async function init() {
 
   renderFreshness(evidence.reconciliation);
   renderTelemetry(telemetry);
+  renderMethodsBreakdown(methods);
+  renderCounterfactual(counterfactual);
+  renderAdversarial(adversarial);
 
   await renderBrief(STATE.role);
 
