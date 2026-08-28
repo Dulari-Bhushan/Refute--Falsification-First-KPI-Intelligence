@@ -108,14 +108,22 @@ def get_ledger() -> sqlite3.Connection:
 
 
 @contextmanager
-def telemetry_span(ledger: sqlite3.Connection, run_id: str, stage: str, is_llm_call: bool = False, model: str | None = None, tokens_in: int = 0, tokens_out: int = 0, cost_usd: float = 0.0):
+def telemetry_span(ledger: sqlite3.Connection, run_id: str, stage: str, is_llm_call: bool = False, model: str | None = None, tokens_in: int = 0, tokens_out: int = 0, cost_usd: float = 0.0, override_latency_ms: float | None = None):
     """Every stage -- deterministic statistics or an LLM call -- logs
     through this exact same span, so the LLM-vs-non-LLM breakdown in the
     telemetry table is structural, not something assembled after the
-    fact from two different logging paths."""
+    fact from two different logging paths.
+
+    override_latency_ms is for work that was already timed before this
+    span opened (e.g. engine/l4_llm_generation.py measures generation
+    latency itself, inside generate_predicate_for_topic, because that
+    function is also used outside any ledger context) -- pass the real
+    measurement through rather than let this span record the near-zero
+    time it takes to enter/exit an empty `with` block wrapping already-
+    completed work."""
     start = time.perf_counter()
     yield
-    latency_ms = (time.perf_counter() - start) * 1000
+    latency_ms = override_latency_ms if override_latency_ms is not None else (time.perf_counter() - start) * 1000
     ledger.execute(
         "INSERT INTO telemetry (run_id, stage, is_llm_call, model, tokens_in, tokens_out, latency_ms, estimated_cost_usd, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
         (run_id, stage, int(is_llm_call), model, tokens_in, tokens_out, latency_ms, cost_usd, datetime.now(timezone.utc).isoformat()),
