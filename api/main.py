@@ -34,6 +34,7 @@ from engine.l4_compiler import EntitlementDenied, check_entitlement
 from engine.l5_adjudicate import adjudicate_all
 from engine.l6_narrate_ledger import build_action_recommendation, build_counterfactual_projection, detect_contradictory_verdicts, get_ledger, submit_feedback
 from engine.methods_registry import REGISTRY, assert_llm_not_quantitative_source
+from engine.calibration import run_calibration_demo
 
 ROOT = Path(__file__).parent.parent
 DATA_DIR = ROOT / "data" / "synthetic"
@@ -217,6 +218,16 @@ def methods_breakdown():
 @app.get("/api/counterfactual")
 def counterfactual(region: str = "West", weeks_ahead: int = 4):
     return build_counterfactual_projection(region=region, weeks_ahead=weeks_ahead)
+
+
+@app.get("/api/calibration-demo")
+def calibration_demo_endpoint():
+    """Objective 7: the calibration MECHANISM (Brier score, reliability
+    diagram, isotonic recalibration), proven against a clearly-labeled
+    simulated backtest -- see engine/calibration.py's module docstring for
+    why this is honest and the live ledger's real entries aren't faked
+    into a fake history instead."""
+    return run_calibration_demo()
 
 
 @app.get("/api/adversarial-challenges")

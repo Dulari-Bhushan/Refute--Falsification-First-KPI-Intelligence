@@ -134,6 +134,53 @@ def bench_l5_did(sizes: list[int]) -> list[BenchResult]:
     return results
 
 
+def bench_integrated_sql_to_verdict(sizes: list[int]) -> list[BenchResult]:
+    """Every other suite in this file times an isolated kernel with
+    synthetic stand-in data. This one is different on purpose: it builds a
+    REAL SQLite database, writes a REAL pos_transactions-shaped table to
+    it, and runs the ACTUAL engine.l4_compiler.compile_unit_query ->
+    sqlite3 execution -> engine.l5_adjudicate.did_estimate path against it
+    -- the real integration, not a proxy for it. Scales the number of
+    distinct fulfillment centers (the real predicate dimension), which
+    drives both the SQL result size and the DiD panel's unit count
+    simultaneously, exactly as it would in production."""
+    import sqlite3
+
+    from engine.l5_adjudicate import did_estimate
+
+    results = []
+    for n_centers in sizes:
+        conn = sqlite3.connect(":memory:")
+        weeks = list(range(1, 21))
+        centers = [f"DC_{i}" for i in range(n_centers)]
+        rows = []
+        for c_idx, center in enumerate(centers):
+            base = 40000 + RNG.normal(0, 3000)
+            treat = 1 if c_idx == 0 else 0  # one "treatment" center vs the rest as control, same shape as a real placebo test
+            for wk in weeks:
+                post = 1 if wk > 10 else 0
+                value = base * (0.85 if (treat and post) else 1.0) + RNG.normal(0, 1500)
+                rows.append({"date": f"2025-{1 + wk // 4:02d}-{1 + (wk % 4) * 7:02d}", "week": wk, "region": "West", "product_category": "Electronics", "fulfillment_center": center, "units": 10, "gross_revenue": max(value, 1)})
+        pd.DataFrame(rows).to_sql("pos_transactions", conn, index=False)
+
+        from engine.l4_compiler import compile_unit_query
+
+        t0 = time.perf_counter()
+        t_sql, t_params = compile_unit_query("fulfillment_center", "West", [centers[0]], 1, 20)
+        c_sql, c_params = compile_unit_query("fulfillment_center", "West", centers[1:], 1, 20)
+        treatment = pd.read_sql_query(t_sql, conn, params=t_params)
+        treatment["treat"] = 1
+        control = pd.read_sql_query(c_sql, conn, params=c_params)
+        control["treat"] = 0
+        panel = pd.concat([treatment, control], ignore_index=True)
+        panel["post"] = (panel["period"] > 10).astype(int)
+        did_estimate(panel)
+        elapsed = time.perf_counter() - t0
+        conn.close()
+        results.append(BenchResult("Integrated SQL->panel->DiD", "fulfillment centers (real SQLite + real compiler + real DiD)", n_centers, elapsed))
+    return results
+
+
 def fit_power_law(results: list[BenchResult]) -> float | None:
     """Rough exponent k for time ~ N^k, fit via log-log slope between the
     smallest and largest scale tested -- not a rigorous fit, just enough
@@ -157,6 +204,7 @@ def main() -> None:
         ("L2 Shapley (categories)", bench_l2_shapley, [4, 20, 100, 500]),
         ("L3 embed+cluster (tickets)", bench_l3_clustering, [52, 500, 2000, 8000]),
         ("L5 DiD (panel units)", bench_l5_did, [4, 20, 100, 400]),
+        ("Integrated SQL->panel->DiD (real path)", bench_integrated_sql_to_verdict, [3, 20, 100]),
     ]
 
     all_results: list[BenchResult] = []
