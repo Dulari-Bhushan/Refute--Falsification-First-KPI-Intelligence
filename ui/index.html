@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>REFUTE -- KPI Intelligence Demo</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header>
+  <h1>REFUTE <span>falsification-first KPI intelligence</span></h1>
+  <div class="tagline">Every automated root-cause tool ranks hypotheses by supporting evidence. This one generates the test that would kill each hypothesis, runs it, and publishes the result.</div>
+</header>
+
+<main>
+
+  <div class="grid-2">
+    <div class="panel">
+      <h2>West Revenue &mdash; Week 32</h2>
+      <div class="headline">
+        <div class="value" id="kpiValue">&mdash;</div>
+        <div class="badge pass" id="kpiBadge">&mdash;</div>
+      </div>
+      <div class="subtext" id="kpiNarrative">Loading&hellip;</div>
+      <canvas id="kpiChart"></canvas>
+    </div>
+
+    <div class="panel">
+      <h2>Narrated Brief</h2>
+      <div class="persona-tabs">
+        <button class="persona-tab active" data-role="ops_manager_west">West Ops Manager</button>
+        <button class="persona-tab" data-role="regional_vp">Regional VP</button>
+      </div>
+      <div id="briefContent">Loading&hellip;</div>
+      <div class="role-note" id="roleNote"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Hypotheses Tested (click a card for evidence)</h2>
+    <div class="cards" id="hypothesisCards"><div class="loading">Loading&hellip;</div></div>
+  </div>
+
+  <div class="panel" id="actionPanel">
+    <h2>Recommended Action</h2>
+    <div id="actionContent" class="loading">Loading&hellip;</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <h2>Source Freshness &amp; Lineage</h2>
+      <div id="freshnessTable" class="loading">Loading&hellip;</div>
+    </div>
+
+    <div class="panel">
+      <h2>Runtime Telemetry &mdash; LLM vs. Deterministic</h2>
+      <div id="telemetryStrip" class="loading">Loading&hellip;</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Feedback Loop Demo</h2>
+    <p class="subtext">An analyst is skeptical of the SURVIVED verdict on <code>h_rep_attrition</code> ("feels like general demand softness, not attrition"). Submitting this doesn't just log the objection &mdash; it's re-expressed as its own falsifiable predicate and run through the identical L4/L5 pipeline.</p>
+    <button class="action-btn" id="feedbackBtn">Submit skeptical re-check</button>
+    <div class="feedback-result" id="feedbackResult"></div>
+  </div>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
