@@ -1,0 +1,107 @@
+{
+  "price_volume_mix_bridge": {
+    "kind": "localisation",
+    "region": "West",
+    "pre_window_weeks": [
+      28,
+      29,
+      30
+    ],
+    "post_window_weeks": [
+      32,
+      33,
+      34
+    ],
+    "revenue_pre": 153333.53,
+    "revenue_post": 133997.27,
+    "delta": -19336.26,
+    "volume_effect": -17535.48,
+    "price_effect": -1800.78,
+    "mix_interaction_effect": -0.0
+  },
+  "category_contribution": [
+    {
+      "kind": "localisation",
+      "dimension": "product_category",
+      "value": "Electronics",
+      "shapley_contribution_usd": -15106.36,
+      "ci90_low": -56511.23,
+      "ci90_high": 19250.78
+    },
+    {
+      "kind": "localisation",
+      "dimension": "product_category",
+      "value": "Apparel",
+      "shapley_contribution_usd": -2876.25,
+      "ci90_low": -10522.2,
+      "ci90_high": 5084.02
+    },
+    {
+      "kind": "localisation",
+      "dimension": "product_category",
+      "value": "Home",
+      "shapley_contribution_usd": -975.09,
+      "ci90_low": -10301.61,
+      "ci90_high": 9255.94
+    },
+    {
+      "kind": "localisation",
+      "dimension": "product_category",
+      "value": "Accessories",
+      "shapley_contribution_usd": -378.56,
+      "ci90_low": -1027.25,
+      "ci90_high": 156.91
+    }
+  ],
+  "rep_contribution": [
+    {
+      "kind": "localisation",
+      "dimension": "rep_id",
+      "value": "W1",
+      "contribution_usd": -6057.13,
+      "share_of_total_decline": 0.2203,
+      "note": "no confidence interval -- see docstring: this figure is not bootstrap-resampled"
+    },
+    {
+      "kind": "localisation",
+      "dimension": "rep_id",
+      "value": "W2",
+      "contribution_usd": -5506.48,
+      "share_of_total_decline": 0.2003,
+      "note": "no confidence interval -- see docstring: this figure is not bootstrap-resampled"
+    },
+    {
+      "kind": "localisation",
+      "dimension": "rep_id",
+      "value": "W3",
+      "contribution_usd": -4405.18,
+      "share_of_total_decline": 0.1602,
+      "note": "no confidence interval -- see docstring: this figure is not bootstrap-resampled"
+    },
+    {
+      "kind": "localisation",
+      "dimension": "rep_id",
+      "value": "W4",
+      "contribution_usd": -3579.21,
+      "share_of_total_decline": 0.1302,
+      "note": "no confidence interval -- see docstring: this figure is not bootstrap-resampled"
+    },
+    {
+      "kind": "localisation",
+      "dimension": "rep_id",
+      "value": "W6",
+      "contribution_usd": 57.23,
+      "share_of_total_decline": -0.0021,
+      "note": "no confidence interval -- see docstring: this figure is not bootstrap-resampled"
+    },
+    {
+      "kind": "localisation",
+      "dimension": "rep_id",
+      "value": "W5",
+      "contribution_usd": 70.43,
+      "share_of_total_decline": -0.0026,
+      "note": "no confidence interval -- see docstring: this figure is not bootstrap-resampled"
+    }
+  ],
+  "region_revenue_loss_usd_jul_to_aug": -27496.04
+}

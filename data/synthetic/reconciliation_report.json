@@ -1,0 +1,61 @@
+{
+  "as_of": "2025-10-12",
+  "source_freshness": [
+    {
+      "source": "pos_transactions",
+      "refresh_cadence": "daily",
+      "covered_through": "2025-10-12",
+      "as_of": "2025-10-12",
+      "staleness_days": 0
+    },
+    {
+      "source": "marketing_spend",
+      "refresh_cadence": "weekly",
+      "covered_through": "2025-10-12",
+      "as_of": "2025-10-12",
+      "staleness_days": 0
+    },
+    {
+      "source": "crm_headcount",
+      "refresh_cadence": "monthly",
+      "covered_through": "2025-09-30",
+      "as_of": "2025-10-12",
+      "staleness_days": 12
+    },
+    {
+      "source": "finance_gl_extract",
+      "refresh_cadence": "monthly",
+      "covered_through": "2025-09-30",
+      "as_of": "2025-10-12",
+      "staleness_days": 12
+    },
+    {
+      "source": "support_tickets",
+      "refresh_cadence": "near-real-time",
+      "covered_through": "2025-10-12",
+      "as_of": "2025-10-12",
+      "staleness_days": 0
+    }
+  ],
+  "revenue_source_agreement_claim": {
+    "claim": "pos_transactions.gross_revenue and finance_gl_extract.gl_revenue_usd agree on revenue for the same region-month, within tolerance",
+    "refutes_if": {
+      "condition": "abs(gap_pct) > 0.005",
+      "rationale": "A systematic gap this size can't be sampling noise across every region-month -- it means the two sources are computing revenue on different definitions."
+    },
+    "observed": {
+      "mean_gap_pct": 2.0,
+      "max_abs_gap_pct": 2.0,
+      "n_region_months_compared": 27
+    },
+    "verdict": "SOURCES_DIVERGE",
+    "explanation": "Systematic ~2.0% gap, consistent across every region-month (not random noise). Documented cause in the KPI contract: 'net of a 2% returns/discount allowance not applied in pos_transactions.gross_revenue'. Treat pos_transactions.gross_revenue as the analysis series (it is the declared system-of-record for the `revenue` KPI); finance_gl_extract is kept as a reconciliation check, not swapped in silently."
+  },
+  "reconciled_panel_grain": "region x week",
+  "reconciled_kpis": [
+    "revenue",
+    "units_sold",
+    "marketing_attributed_revenue_share",
+    "rep_attributed_revenue"
+  ]
+}

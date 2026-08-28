@@ -1,2 +1,264 @@
-# Refute: Falsification-First KPI Intelligence
+# REFUTE — Falsification-First KPI Intelligence
 
+**Accenture Hackathon — Problem Statement 3: BusinessIntelligence.ai**
+
+> Every automated root-cause tool ranks hypotheses by supporting evidence. REFUTE generates the test that would kill each hypothesis, runs it, and publishes its own hit rate.
+
+This README captures the accumulated context from Round 1 (accepted concept) and Round 2 (expanded prototype brief), plus the current build status. Sections 1–10 below are the original architecture/context document (still accurate as design intent); this section is the living status — check here first.
+
+---
+
+## 0. Implementation status (updated 2026-08-28)
+
+**The core falsification engine (L1–L6) is built and validated end-to-end against planted ground truth.** Run it yourself:
+
+```bash
+uv run python run_pipeline.py
+```
+
+This regenerates the synthetic dataset, reconciles it, and runs all six layers in order — no live LLM calls anywhere in this path (see below). Takes a few seconds.
+
+### What's working
+
+| Layer | File | Status |
+|---|---|---|
+| Semantic contract | [semantic/kpi_contract.yaml](semantic/kpi_contract.yaml) | 4 KPIs, 5 sources, 2 entitlement roles, maturity rule, lineage |
+| Synthetic data | [data/generate_synthetic_data.py](data/generate_synthetic_data.py) | 9,228 POS rows, 3 sources at 3 cadences, 1 true cause + 4 decoys, sparse-history category, definition-drift pair |
+| Reconciliation | [data/reconciliation.py](data/reconciliation.py) | Multi-cadence resampling, freshness tracking, cross-source agreement tested as a falsifiable claim (correctly flags the planted 2% gross/net definition drift) |
+| L1 Signal | [engine/l1_signal.py](engine/l1_signal.py) | Custom BOCPD (NIG conjugate prior, constant hazard), statistical × business-impact gate, sparse-history empirical-Bayes shrinkage |
+| L2 Localise | [engine/l2_localise.py](engine/l2_localise.py) | Exact price/volume/mix bridge, Monte-Carlo Shapley category attribution with bootstrap CIs |
+| L3 Hypothesise | [engine/l3_hypothesise.py](engine/l3_hypothesise.py) | Sentence-transformer embeddings + agglomerative clustering over support tickets, per-topic BOCPD, structural precedence filter (the naive-RAG-trap defense) |
+| L4 Compiler | [engine/l4_compiler.py](engine/l4_compiler.py) | Pydantic predicate schema with hard-validated `refutes_if`, whitelisted parameterized SQL compiler, compile-time entitlement checks |
+| L5 Adjudicate | [engine/l5_adjudicate.py](engine/l5_adjudicate.py) | DiD (log-scale, unit fixed effects, cluster-robust → HC1 fallback below 4 clusters/side), mandatory parallel-trends check, the power gate, BH-FDR correction |
+| L6 Narrate + Ledger | [engine/l6_narrate_ledger.py](engine/l6_narrate_ledger.py) | Structured action template, persona rendering (2 roles, entitlement-filtered), SQLite ledger, telemetry, feedback-as-falsification-event |
+
+### The canonical worked example, actually running
+
+West revenue fell **-8.9%** in week 32 (L1 gate: PASS, posterior 0.79 — East/Central correctly stay noise, no LLM call). Five hypotheses tested, all landing on the intended verdict:
+
+| Hypothesis | Archetype | Verdict | Why |
+|---|---|---|---|
+| `h_shipping_delay` | placebo | **KILLED** | Not significant, and the test had power to detect a real effect (MDE 8% ≤ 10% floor) |
+| `h_competitor_launch` | specificity | **KILLED** | Same — a properly-powered non-result |
+| `h_billing_complaints` | precedence | **KILLED** | Its own changepoint (week 33) comes *after* the KPI's (week 32) — caught structurally at L3 generation time, independently re-confirmed by L5's formal precedence test |
+| `h_accessories_pricing` | specificity | **INCONCLUSIVE** | MDE (28%) far exceeds the plausible-effect floor (10%) — genuinely underpowered, not swept into KILLED |
+| `h_rep_attrition` | placebo | **SURVIVED** | 300pp differential effect, p<0.001; **71% of the loss sits in the four departed reps' accounts** (calibrated to match the canonical narrative exactly) |
+
+This is the exact three-way split (obvious decoys killed / underpowered decoy inconclusive / true cause survives) that §8's evaluation targets call the most important thing to get right — and it's now real, not aspirational.
+
+### Real bugs found and fixed along the way (not silently patched)
+
+Documented in the code where they were found, since they're the kind of thing worth a reader knowing about:
+- An organic growth trend was masking the planted level-shift from BOCPD entirely.
+- The newly-launched Outdoor category was contaminating every region's aggregate revenue simultaneously — fixed via an explicit category-maturity business rule (a real complexity, not a workaround).
+- Monthly CRM data flat-repeated across weeks created spurious calendar-quantization changepoints — fixed by analyzing each KPI at its own native refresh cadence instead of upsampling.
+- Raw-dollar-level DiD regression was spuriously significant for the two "obvious" decoys purely from cross-group scale differences (one fulfillment center is 4x the size of the others) — fixed via log-transform + unit fixed effects.
+- Pooling residual variance across treatment *and* control diluted the underpowered decoy's genuinely higher relative noise — fixed by computing the power-gate noise from the treatment group's own within-unit deviation only.
+- A feedback-loop counter-hypothesis was silently defaulting to INCONCLUSIVE via a failed lookup, not genuine adjudication — fixed by making `adjudicate_all()` accept ad-hoc predicates instead of only the static fixture list.
+
+### What's NOT built yet
+
+- **Live LLM calls.** Everything above runs on the templated/deterministic path — hand-written predicate fixtures, not LLM-generated ones. Per the original risk-mitigation plan, this was deliberate: prove the compiler/adjudication/ledger machinery correct on known-good predicates before wiring in generation. L3's *candidate discovery* (embeddings, clustering, BOCPD) is real and already running; what's missing is an LLM call turning a topic cluster into a novel causal-mechanism predicate, with the Pydantic schema as a constrained-decoding/validation gate and fallback to the templated fixtures on failure.
+- **UI.** No FastAPI backend or frontend yet — everything above is driven by `run_pipeline.py` and reads/writes JSON + SQLite in `data/synthetic/`.
+- **Reconciliation-as-falsification for row/column security beyond the one entitlement demo.** The role-based scenario works (`regional_vp` denied rep-level detail, `ops_manager_west` allowed) but only two roles/one denial path are wired up.
+- **Ledger calibration.** Brier score / reliability diagram / isotonic recalibration code isn't written yet — needs ~30 scored outcomes to be meaningful anyway (honesty note already printed by `l6_narrate_ledger.py`).
+- **Tier 3 stretch features** (visible counterfactual projection, adversarial counter-hypothesis generation) — not started, reach-only per the original plan.
+
+### Structural note
+
+The original plan sketched separate top-level `feedback/` and `telemetry/` packages; in the actual build these consolidated into `engine/l6_narrate_ledger.py` since both are thin enough (a SQLite table + a context-manager span, a predicate-reuse function) that a separate package would have been indirection without payoff. `api/` and `ui/` remain empty, reserved for the next phase.
+
+---
+
+## 1. Where we are
+
+- **Round 1 (done):** Pitched REFUTE against Problem Statement 3. Concept accepted, advanced to Round 2.
+- **Round 2 (current):** Build a working prototype. This document is the merged spec: the Round 1 architecture (detailed, opinionated, already designed) plus the Round 2 brief's expanded requirements (broader, some of which Round 1 doesn't yet explicitly cover — see [§6](#6-round-2-gap-check-against-the-round-1-design)).
+- **Do not silently change:** the project name (REFUTE), the core mechanic (falsification, not ranking), or the honest-positioning language in [§4](#4-positioning--prior-art-read-before-writing-any-docs-or-copy) without flagging it first.
+
+---
+
+## 2. The core idea
+
+**The naive build:** LLM reads data → LLM writes an explanation. This fails structurally: slice business data enough ways (region × channel × segment × time...) and *something* will always correlate with an anomaly window — a statistical guarantee (garden of forking paths, Gelman & Loken), not a fixable data-quality problem.
+
+**What shipping RCA tools do (Tellius, causaLens, Tredence, cloud-native RCA):** generate hypotheses, rank by supporting evidence, return the top-ranked one. Confident, fluent, well-cited — and never wrong "out loud," because it was never at risk of being falsified.
+
+**REFUTE's inversion:** instead of ranking hypotheses by supporting evidence, generate the test that would *disprove* each hypothesis, run it, and report only what survives. This automates a falsificationist final step (Popper's demarcation criterion) on top of the existing RCA stack. The closest real precedent is Microsoft's **DoWhy**, which ships `refute_estimate()` methods (placebo, random common cause, data subset, dummy outcome) as manual, analyst-invoked tools for causal *estimates*. REFUTE's specific claim: automating that refutation-testing pattern end-to-end for business-KPI root-cause hypotheses, without a human hand-writing each test.
+
+We did not invent refutation testing. We automated it for a domain (business KPIs) and workflow (root-cause hypothesis generation) where, as far as verified, nobody currently does this automatically.
+
+---
+
+## 3. Architecture — six layers (Round 1 spec, authoritative)
+
+Build in this order; each layer is a genuine sub-problem, not a rebrand of the previous one.
+
+### L1 — SIGNAL (real move, or noise?)
+- Bayesian Online Changepoint Detection (BOCPD, Adams & MacKay 2007) over an STL-deseasonalised series. Run-length posterior `P(rₜ | y₁:ₜ)`, constant hazard, Student-t predictive via Normal-Inverse-Gamma conjugate prior.
+- Returns a posterior over *when* the break occurred (τ), not a point estimate — needed downstream for DiD pre/post windows.
+- **Gate:** proceed past L1 only if `P(changepoint ∈ recent window) > 0.9`. Otherwise: "within normal variation," and **no LLM call is made.** This is both the noise filter and the cost-control mechanism.
+- Libraries: `ruptures` and/or custom BOCPD (~150 LOC), `statsmodels` for STL.
+
+### L2 — LOCALISE (where, never why)
+- Additive metrics (`Revenue = Σ quantity_i × price_i`): exact decomposition into volume / price / mix-interaction effects.
+- Non-additive/interacting dimensions: Shapley value attribution via Monte-Carlo permutation (`m ≈ 2000`), reporting the attribution **confidence interval**, not a bare point estimate.
+- **Enforced by schema/type, not prompt instruction:** L2 output tagged `"kind": "localisation"`, can never be rendered downstream as a causal claim.
+
+### L3 — HYPOTHESISE (candidate causes, structured + unstructured)
+- Avoids the naive-RAG trap (retrieving tickets from the anomaly window is fatally biased — ticket volume/sentiment moves in every bad week).
+- Correct approach: embed all tickets/notes continuously (`sentence-transformers`) → cluster into topics (UMAP + HDBSCAN, or BERTopic) → build a per-topic time series → run the **same BOCPD from L1** independently per topic → a topic only becomes a candidate if it has its *own* independent changepoint whose τ precedes the KPI's τ (checked structurally, not left to the LLM).
+- LLM's role: given a topic cluster + localisation slice, state a plausible causal mechanism in natural language. It proposes; it does not adjudicate.
+
+### L4 — FALSIFICATION COMPILER ⭐ (core engineering contribution, highest risk, build/stub first)
+- The LLM never writes SQL. It emits a typed JSON "causal predicate" under constrained/structured decoding (Pydantic schema validation). A separate deterministic compiler turns the predicate into parameterised, read-only SQL against a whitelisted schema.
+- Predicate schema (required fields): `hypothesis_id`, `mechanism`, `test_archetype`, `treatment`, `control`, `outcome`, `temporal` (`cause_onset`, `kpi_onset`), `refutes_if` (`condition`, `rationale`).
+- **`refutes_if` is mandatory.** A hypothesis that cannot state its own refutation condition is rejected before testing — Popper's demarcation criterion as a hard schema/validation constraint, not a prompt instruction.
+- Four test archetypes (compiler selects applicable ones based on predicate structure):
+
+| Archetype | Question | Kills the hypothesis when | Method |
+|---|---|---|---|
+| Placebo | Does effect appear where mechanism can't reach? | Unexposed control shows same drop | Difference-in-differences |
+| Dose-response | Does effect scale with exposure? | No monotone relationship across strata | Rank correlation / stratified regression |
+| Precedence | Did cause actually come first? | Effect onset precedes cause onset | BOCPD τ comparison + Granger causality |
+| Specificity | Is effect confined to the right metric? | Unrelated metrics moved identically | Multi-outcome DiD |
+
+- Must survive **all applicable** archetypes to be reported SURVIVED.
+- Graceful degradation: if the LLM fails to produce a valid predicate, fall back to template archetypes over the top-3 localisation slices — never fall back to guessing.
+- Tooling: Pydantic, SQLGlot (build SQL AST from validated predicate, not string concatenation).
+
+### L5 — ADJUDICATE (run the test, three-valued verdict)
+- DiD for placebo/specificity: `Y_it = α + β·treat_i + γ·post_t + δ·(treat_i × post_t) + ε_it`, SEs clustered at treatment-unit level (naive SEs overstate significance — Bertrand, Duflo, Mullainathan).
+- **Parallel-trends pre-check is mandatory.** Non-parallel pre-trends (`p < 0.1` on any lead) → **INCONCLUSIVE**, not a verdict.
+- **The power gate — single most important design decision, do not skip:** compute minimum detectable effect (MDE) at 80% power before accepting a null as KILLED.
+  ```
+  if effect is statistically significant  →  SURVIVES this test
+  elif MDE > plausible_effect_size        →  INCONCLUSIVE (underpowered — name the sample size that would resolve it)
+  else                                     →  KILLED
+  ```
+  Reporting KILLED on an underpowered test launders thin data as evidence of absence — worse than not testing. The three-valued verdict (KILLED / SURVIVED / INCONCLUSIVE) is load-bearing, not a nice-to-have.
+- **Multiple-comparisons correction:** Benjamini-Hochberg FDR at `q = 0.10` across all `~4n` tests (BH, not Bonferroni — tests are positively dependent). Report the BH-adjusted threshold in the output.
+- Libraries: `linearmodels` (PanelOLS, clustered SEs), `statsmodels` (power analysis).
+
+### L6 — NARRATE + LEDGER
+- **Narrate:** whatever survives → plain-English brief: what changed, why (surviving mechanism), what to do, stated confidence. When nothing survives, the brief says so explicitly and names the specific additional data that would resolve the ambiguity — a literal, visible system behavior, not just philosophy.
+- **Ledger:** every verdict writes an immutable record — predicate, generated-SQL hash, effect estimate + CI, power, BH-adjusted p-value, verdict, predicted direction/magnitude if the recommendation is followed. At a defined horizon, score actual vs. predicted: Brier score, reliability diagram, isotonic regression recalibration (`sklearn.isotonic`).
+- Source of the headline demo stat ("31 of 38") — replace with a real computed number from the synthetic eval run, or clearly label as illustrative placeholder if the ledger hasn't accumulated 38 scored outcomes yet.
+
+---
+
+## 4. Positioning & prior art (read before writing any docs or copy)
+
+Verified by live web search (mid-August 2026):
+
+**Already exists:**
+- Automated RCA on business KPIs is a shipping commercial category: Tellius (dimensional traversal + Shapley + significance testing, sub-60s), causaLens (causal-graph RCA), Tredence (2024 LLM pipeline: anomaly detection → RCA hypothesis generation → testing). **All rank hypotheses by supporting evidence.**
+- DoWhy ships `refute_estimate()` — placebo, random common cause, data subset, dummy outcome refuters — as manual, analyst-invoked tools for causal *estimates*, not an automated end-to-end pipeline for business-KPI root-cause hypotheses.
+- LLM guardrail/observability platforms (NeMo Guardrails, Guardrails AI, Bedrock Guardrails) are a separate, crowded space — explored as an alternative direction, **not** part of REFUTE's scope.
+
+**Verified NOT already automated (our actual claim):**
+1. Automatic generation of a *disconfirming* test per hypothesis (not just ranking by supporting evidence) — no product does this automatically.
+2. "Insufficient evidence" / INCONCLUSIVE as a first-class output with a stated resolution path — competing products architecturally always return a ranked answer.
+3. A self-scoring accuracy ledger — no RCA product publishes its own historical hit rate.
+
+**Honesty constraints for any generated docs/copy:**
+- Never claim to have invented RCA, causal inference, or refutation testing.
+- Always position against DoWhy specifically — citing it correctly is more credible than staying silent.
+- State limitations plainly: DiD needs a valid control group (report identification failure, don't force a weaker design); SURVIVED means "survived the tests we could construct," not "proven true" — unobserved confounders remain unobserved; topic clustering degrades below ~200 documents/window; the ledger needs ~30 scored outcomes before calibration is meaningful — early runs labeled uncalibrated, not shown with a confident hit-rate they haven't earned.
+
+---
+
+## 5. Data plan
+
+No production/scraped data — **synthetic and hand-authored is a requirement, not a shortcut.** Falsification can only be validated against known ground truth.
+
+- ~500 rows transaction-level or weekly-aggregated KPI data, ≥2 dimensions (e.g. region × fulfillment_center), enough time span for clean pre/post windows around a planted changepoint.
+- ~50 synthetic support tickets/notes, embeddable, realistic-sounding but fabricated.
+- One planted true cause.
+- **At least three planted decoys, each failing a different way:**
+  1. Coincidentally timed (correlates, no mechanism) — killed via **placebo**.
+  2. Reverse-caused (KPI change caused the "cause," not vice versa) — killed via **precedence**.
+  3. Genuinely underpowered (real but tiny, or too little data) — must return **INCONCLUSIVE, not KILLED**. This is the single most important test case: any system can kill an obvious decoy; correctly declining to kill an underpowered one — and saying so — is what separates an honest system from a confident one.
+
+**Canonical worked example (already used in deck/script/diagrams — reproduce exactly):**
+- Region West revenue fell 8% in week 32.
+- Candidate 1: "Shipping delays" → KILLED (unaffected products fell equally — fails placebo).
+- Candidate 2: "Competitor launch" → KILLED (non-overlapping categories fell just as hard — fails specificity).
+- Candidate 3: "Rep attrition" → SURVIVED (71% of loss sits in four departed reps' accounts, timing aligns, survives all applicable tests).
+- Final brief: *"Revenue fell 8%. The cause is rep attrition — 71% of the loss sits in four departed reps' accounts. Shipping delays and the competitor launch were both tested and ruled out. Next step: reassign those accounts this week."*
+
+---
+
+## 6. Round 2 gap-check against the Round 1 design
+
+The Round 2 brief expands the ask beyond what the Round 1 architecture explicitly covers. The falsification engine (L1–L6) satisfies most of the *analytical* requirements well already; the gaps are mostly in **multi-source reconciliation, persona/security framing, feedback loop, and telemetry** — real additional work, not just renaming existing pieces.
+
+| Round 2 requirement | Covered by Round 1 design? | Notes / what's still needed |
+|---|---|---|
+| 1. Detect & prioritise material KPI movements | ✅ L1 (BOCPD) + materiality = statistical (posterior) × business impact | Need to make "business impact" weighting explicit (currently implied, not scored) |
+| 2. Reconcile data/context across heterogeneous sources | ⚠️ Partial | Round 1 assumes one clean synthetic table + tickets. Round 2 wants **3–5 KPIs across 2–3 sources with different grains/cadences** — needs an explicit reconciliation/join layer, not just a single wide table |
+| 3. Identify & rank explanatory drivers | ✅ L2 (localisation) + L3 (hypothesis gen) + L4/L5 (falsification, not ranking) | Already the project's core differentiator |
+| 4. Persona-specific narratives with traceable evidence | ❌ Not designed yet | Round 1's L6 narrator is single-voice. Need ≥2 personas (e.g. analyst vs. exec, or category manager vs. ops) with different depth/action framing from the same ledger evidence |
+| 5. Communicate uncertainty, abstain when insufficient/contradictory | ✅ Core mechanic — INCONCLUSIVE verdict, power gate, BH correction | Already the strongest-covered requirement |
+| 6. Recommend actions grounded in levers/constraints/decision rights | ⚠️ Partial | L6 brief includes "what to do" but not yet structured as `driver → controllable lever → action → expected impact → owner → confidence → monitoring plan` per the Round 2 template — worth adopting that exact structure |
+| 7. Learn from analyst/business-user feedback | ❌ Not designed yet | Ledger (L6) scores against *actual outcomes*, but there's no explicit human-feedback/correction capture (e.g. "this verdict was wrong," "wrong persona framing") feeding back into the system |
+| 8. Security, cost, latency, scalability constraints | ⚠️ Partial | Cost/latency: L1's gate (no LLM call on noise) + sub-60s target are real cost controls. **Row/column/domain-level security and entitlements are not designed at all** — needed for the Round 2 "role-based security or entitlement scenario" |
+| KPI/semantic contract (definitions, calculations, drivers, thresholds, lineage, access) | ❌ Not designed yet | Round 1 has an implicit schema (whitelisted tables for L4) but no formal lightweight semantic contract artifact |
+| Sparse-history / newly-launched KPI scenario | ❌ Not designed yet | Needs a 4th planted scenario in the synthetic dataset alongside the 3 decoys |
+| Runtime telemetry (latency, model calls, tokens, cost) | ❌ Not designed yet | Ledger currently tracks statistical provenance, not LLM ops metrics — needs a telemetry layer alongside it |
+| LLM vs. non-LLM breakdown | ✅ Already a core design principle (L4: LLM proposes predicate, deterministic compiler executes) | Just needs to be surfaced visibly in the UI/output, not only in architecture docs |
+
+**Net read:** REFUTE's falsification mechanic is a strong, differentiated answer to Round 2 requirements 3, 5, and most of 1 and 6 — that's the hard analytical core and it's already well thought through. What's missing for full Round 2 coverage is mostly *scaffolding around* that core: multi-source data reconciliation, persona narration, a feedback-capture loop, entitlements/security, a semantic contract, and telemetry. None of these break the core architecture — they're additive layers/artifacts, not redesigns.
+
+---
+
+## 7. Build priorities (Round 1 sequencing — still the right order for the core engine)
+
+**Critical path risk:** L4 (falsification compiler) is the highest-risk component — getting an LLM to reliably emit a genuinely *disconfirming* predicate (not a supporting hypothesis dressed up in the schema) is the real engineering risk.
+
+1. **Templated/deterministic fallback path first.** Hand-write the three worked-example predicates (shipping delay, competitor launch, rep attrition) as static JSON. Get compiler → SQL → execution → DiD → verdict working end-to-end against these before touching LLM generation.
+2. Add L1 (BOCPD) + L2 (localisation) — well-understood, lower risk.
+3. Add L3 (topic clustering + hypothesis candidates from unstructured data) — moderate risk, degrades gracefully.
+4. **Last:** wire in live LLM generation for the causal predicate in L4, with constrained decoding / Pydantic validation and the `refutes_if` hard check. If this doesn't converge in time, the templated fallback is an acceptable demo — it still proves the architecture.
+5. L6 narration (templated string formatting is fine for the demo) + ledger (SQLite).
+6. **Minimal UI last:** demo footage of the worked example — three hypothesis cards, two struck through, one surviving, then the narrated brief. FastAPI backend + minimal React/server-rendered frontend is enough.
+
+**Suggested stack:** Python throughout — `ruptures`/custom BOCPD + `statsmodels` (L1), `pandas` + Monte-Carlo Shapley (L2), `sentence-transformers` + UMAP + HDBSCAN (L3), Pydantic + SQLGlot (L4), `linearmodels` + `statsmodels.power` (L5), SQLite + `sklearn.isotonic` (L6), FastAPI backend, React frontend if time allows.
+
+**Complexity target:** sub-60s end-to-end, dominated by I/O not compute — falsification tests are embarrassingly parallel across archetypes.
+
+---
+
+## 8. Evaluation targets
+
+| Metric | Target | Why it matters |
+|---|---|---|
+| True planted cause survives all applicable tests | 100% | Core correctness |
+| Both "obvious" decoys correctly killed | >90% | Proves the falsification mechanic works |
+| Underpowered decoy returns INCONCLUSIVE, not KILLED | 100% — must not fail | Proves the power gate is real, not decorative |
+| BH-adjusted significance reported and used | Present in output | System holds itself to its own stated standard |
+| Time to verdict, end-to-end | <60s | Feasibility/demo-ability |
+| `refutes_if` enforced (predicates without it rejected) | 100% | Proves the Popperian constraint is a real code-level check |
+
+**If only one thing can be fully correct, make it the underpowered-decoy → INCONCLUSIVE case.** It's the single test proving this is meaningfully different from "yet another RCA ranking tool," and the one most likely to be silently skipped under time pressure.
+
+---
+
+## 9. What's already built (Round 1 deliverables, not part of the coding task)
+
+1. Written submission copy (problem statement ~197 words, solution ~193 words).
+2. Full technical specification document (longer prose version of §3 above, with additional implementation notes and an honest-limitations section).
+3. Video narration script, timed ~2:50, slide-synced.
+4. 15-slide deck (`REFUTE.pptx`, built via pptxgenjs): 11 narration slides + 3 appendix slides + 1 narration cue sheet. Custom flat SVG diagrams (no default Mermaid styling). Strict color discipline: red/green-teal reserved exclusively for KILLED/SURVIVED verdicts.
+5. Logo assets: wordmark (light + dark), icon mark (three bars — two struck red, one checked green), plus unfinalized alternates.
+
+---
+
+## 10. Next step
+
+**Superseded by [§0](#0-implementation-status-updated-2026-08-28) above** — the gap list this section originally pointed to has been built and validated (see §0's table and worked-example results). This section is kept for history; the live plan is the one at `.claude/plans/so-tell-me-what-federated-brook.md` (see that file's own updated status/next-step sections), and the actionable next-step list is:
+
+1. **Live LLM wiring** for L3's mechanism proposal and L4's predicate generation, with the Pydantic schema as the constrained-decoding/validation gate and fallback to the templated fixtures already proven correct in this build.
+2. **Minimal UI** (FastAPI + a small frontend) — the demo footage target from the original plan: KPI series with changepoint markers → hypothesis cards (struck through / surviving) → narrated brief in both personas → evidence panel → telemetry/cost strip → live entitlement-denial example → feedback-rejection example. Everything it needs to render already exists as JSON/SQLite output from `run_pipeline.py`.
+3. **Tier 3 stretch features** (visible counterfactual projection, adversarial counter-hypothesis generation) — only after 1–2 are demo-solid, per the original plan's own sequencing.
+4. Ledger calibration scoring (Brier score, reliability diagram) once real scored outcomes accrue — not before, per the honesty constraint already enforced in `l6_narrate_ledger.py`.

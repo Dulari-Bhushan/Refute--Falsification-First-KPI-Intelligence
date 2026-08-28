@@ -1,0 +1,81 @@
+{
+  "analysis_target": {
+    "kpi": "revenue",
+    "region": "West",
+    "kpi_onset_week": 32,
+    "kpi_onset_date": "2025-08-11",
+    "observed_movement_pct": -0.08,
+    "description": "Region West revenue fell ~8% starting week 32."
+  },
+  "true_cause": {
+    "hypothesis_id": "h_rep_attrition",
+    "mechanism": "Four of six West sales reps departed; their accounts went unmanaged, suppressing revenue broadly across all categories and fulfillment centers.",
+    "cause_onset_date": "2025-08-04",
+    "departed_reps": [
+      "W1",
+      "W2",
+      "W3",
+      "W4"
+    ],
+    "expected_share_of_loss": 0.71,
+    "expected_verdict": "SURVIVED"
+  },
+  "decoys": [
+    {
+      "hypothesis_id": "h_shipping_delay",
+      "mechanism": "Carrier delays at WEST_DC suppressed West revenue.",
+      "designed_to_fail": "placebo",
+      "why_it_fails": "The revenue decline is broad-based across all fulfillment centers serving West (driven by rep attrition), not confined to WEST_DC-fulfilled orders -- the control group (non-WEST_DC-fulfilled West orders) shows the same drop.",
+      "expected_verdict": "KILLED"
+    },
+    {
+      "hypothesis_id": "h_competitor_launch",
+      "mechanism": "A competitor's product launch drew Electronics customers away.",
+      "designed_to_fail": "specificity",
+      "why_it_fails": "The decline is uniform across every product category, not confined to Electronics where the competitor actually competes -- unrelated categories (Home, Apparel) fell just as hard.",
+      "expected_verdict": "KILLED"
+    },
+    {
+      "hypothesis_id": "h_billing_complaints",
+      "mechanism": "A spike in billing/account-service complaints caused customers to reduce spend.",
+      "designed_to_fail": "precedence",
+      "why_it_fails": "The complaint-volume changepoint (week 33) comes AFTER the kpi's own changepoint (week 32) -- the complaints are a downstream symptom of unmanaged accounts, not the cause.",
+      "reverse_cause_onset_week": 33,
+      "expected_verdict": "KILLED"
+    },
+    {
+      "hypothesis_id": "h_accessories_pricing",
+      "mechanism": "A pricing change in the Accessories category reduced West revenue.",
+      "designed_to_fail": "power",
+      "why_it_fails": "The effect is real but Accessories is West's lowest-volume category -- too few weekly observations to reach 80% power, so the honest verdict is INCONCLUSIVE, not KILLED.",
+      "expected_verdict": "INCONCLUSIVE"
+    }
+  ],
+  "sparse_history_scenario": {
+    "kpi": "revenue",
+    "category": "Outdoor",
+    "launch_week": 34,
+    "weeks_of_history_at_analysis_end": 7,
+    "description": "Outdoor category launched week 34 -- fewer than 8 weeks of history by the end of the analysis window. L1 should widen its prior and report low confidence rather than extrapolate confidently."
+  },
+  "definition_drift_scenario": {
+    "sources": [
+      "pos_transactions",
+      "finance_gl_extract"
+    ],
+    "kpi": "revenue",
+    "deviation": "finance_gl_extract reports revenue net of a 2% returns/discount allowance; pos_transactions reports gross. The reconciliation layer must detect and report this as a refuted 'sources agree' claim, not silently average the two."
+  },
+  "entitlement_scenario": {
+    "roles": [
+      "ops_manager_west",
+      "regional_vp"
+    ],
+    "description": "ops_manager_west may see West rep-level attrition detail; regional_vp sees cross-region aggregates but is denied rep-level detail at compile time."
+  },
+  "generation": {
+    "seed": 42,
+    "week1_start": "2025-01-06",
+    "total_weeks": 40
+  }
+}

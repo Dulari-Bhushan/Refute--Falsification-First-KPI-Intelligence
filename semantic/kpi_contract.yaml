@@ -1,0 +1,162 @@
+# REFUTE — KPI Semantic Contract
+#
+# The lightweight semantic contract required by the Round 2 brief: definitions,
+# calculations, drivers, thresholds, lineage, and access restrictions for every
+# KPI the engine reasons about. Every downstream layer (L1-L6) reads this file
+# rather than hard-coding source paths, formulas, or ownership — it is the
+# single place "what does this number mean and where does it come from" is
+# answered, and the UI's evidence panel renders straight from it.
+#
+# Analysis calendar: ISO week 1-40 of synthetic year 2025 (week 1 starts
+# 2025-01-06, a Monday). The planted anomaly is Region West revenue, week 32.
+
+version: 1
+analysis_calendar:
+  week1_start: "2025-01-06"
+  total_weeks: 40
+
+sources:
+  pos_transactions:
+    description: "Daily point-of-sale sales feed, rolled up to day x region x product_category x fulfillment_center"
+    grain: "day x region x product_category x fulfillment_center"
+    refresh_cadence: daily
+    system_of_record: true
+    fields: [date, region, product_category, fulfillment_center, units, gross_revenue]
+
+  marketing_spend:
+    description: "Weekly marketing spend and attribution feed"
+    grain: "week x region x channel"
+    refresh_cadence: weekly
+    system_of_record: true
+    fields: [week, region, channel, spend_usd, attributed_revenue_usd]
+
+  crm_headcount:
+    description: "Monthly CRM/HR extract: rep roster, region assignment, account book, attrition dates"
+    grain: "month x region x rep"
+    refresh_cadence: monthly
+    system_of_record: true
+    fields: [month, region, rep_id, rep_name, active, attrition_date, assigned_accounts, rep_attributed_revenue_usd]
+
+  finance_gl_extract:
+    description: >
+      Monthly general-ledger revenue extract, reported independently by Finance.
+      Kept deliberately separate from pos_transactions rather than derived from
+      it, because in real organizations these two numbers are produced by
+      different systems and different teams — this is the source pair used to
+      demonstrate definition-drift reconciliation (see reconciliation.py).
+    grain: "month x region"
+    refresh_cadence: monthly
+    system_of_record: false
+    fields: [month, region, gl_revenue_usd]
+    known_definition_deviation: "net of a 2% returns/discount allowance not applied in pos_transactions.gross_revenue"
+
+  support_tickets:
+    description: "Free-text customer/ops tickets and notes, continuously embedded (not just at query time — see L3)"
+    grain: "ticket-level, timestamped"
+    refresh_cadence: near-real-time
+    system_of_record: false
+    fields: [ticket_id, created_at, region, topic_seed, text]
+
+kpis:
+  revenue:
+    definition: >
+      Gross merchandise revenue recognized at time of sale, summed across
+      mature product categories and all fulfillment centers for a
+      region-week. "Mature" is a deliberate business rule, not an
+      omission: a category is folded into core revenue reporting once it
+      has at least 8 weeks of trading history (see maturity_rule below) --
+      until then it is tracked separately (see kpis.new_category_revenue)
+      so a new launch's ramp-up doesn't get mistaken for, or mask, a
+      material movement in the mature business.
+    formula: "sum(pos_transactions.units * unit_price) for the region-week, restricted to categories with >= 8 weeks of trading history as of that week"
+    maturity_rule:
+      min_weeks_of_history: 8
+      rationale: "Matches L1's own sparse-history threshold (engine/l1_signal.py) -- the same 8-week bar that makes a category's own statistics untrustworthy also makes it unsafe to fold into an aggregate that other, mature categories are being measured against."
+    grain: "region x week"
+    sources: [pos_transactions]
+    reconciled_against: [finance_gl_extract]
+    drivers: [units_sold, marketing_attributed_revenue_share, rep_attributed_revenue]
+    owner: "Regional VP of Sales"
+    materiality:
+      statistical: "BOCPD posterior P(changepoint in recent window) > 0.9"
+      business_impact_pct_threshold: 0.03
+      business_impact_abs_usd_threshold: 25000
+    lineage:
+      - "pos_transactions.units, pos_transactions.gross_revenue -> weekly region aggregate"
+    access_tags: [region_scoped]
+
+  units_sold:
+    definition: "Count of units sold, summed across mature product categories (see revenue.maturity_rule) for a region-week."
+    formula: "sum(pos_transactions.units), restricted to categories with >= 8 weeks of trading history as of that week"
+    grain: "region x week"
+    sources: [pos_transactions]
+    owner: "Regional VP of Sales"
+    materiality:
+      statistical: "BOCPD posterior > 0.9"
+      business_impact_pct_threshold: 0.05
+      business_impact_abs_usd_threshold: null
+    lineage:
+      - "pos_transactions.units -> weekly region aggregate"
+    access_tags: [region_scoped]
+
+  marketing_attributed_revenue_share:
+    definition: "Share of regional revenue that marketing attribution models credit to a paid channel, for a region-week."
+    formula: "sum(marketing_spend.attributed_revenue_usd) / revenue, for the region-week"
+    grain: "region x week"
+    sources: [marketing_spend, pos_transactions]
+    owner: "Head of Marketing"
+    materiality:
+      statistical: "BOCPD posterior > 0.9"
+      business_impact_pct_threshold: 0.04
+      business_impact_abs_usd_threshold: null
+    lineage:
+      - "marketing_spend.attributed_revenue_usd, revenue -> weekly region ratio"
+    access_tags: [region_scoped]
+
+  rep_attributed_revenue:
+    definition: "Revenue attributed to accounts assigned to an active sales rep, for a region-week. Rep-level detail is HR/compensation-sensitive."
+    formula: "sum(crm_headcount.rep_attributed_revenue_usd) for active reps in the region, resampled to weekly"
+    grain: "region x week (aggregate); region x week x rep (detail)"
+    sources: [crm_headcount, pos_transactions]
+    owner: "Regional VP of Sales"
+    materiality:
+      statistical: "BOCPD posterior > 0.9"
+      business_impact_pct_threshold: 0.03
+      business_impact_abs_usd_threshold: 20000
+    lineage:
+      - "crm_headcount.rep_attributed_revenue_usd -> weekly region aggregate or rep-level detail"
+    access_tags: [region_scoped, rep_detail_restricted]
+
+  new_category_revenue:
+    definition: "Revenue for a product category still within its 8-week maturity window (see revenue.maturity_rule) -- tracked separately so a launch ramp-up is never silently folded into, or mistaken for a movement in, core revenue."
+    formula: "sum(pos_transactions.gross_revenue) for a category with < 8 weeks of trading history, by category x region x week"
+    grain: "region x category x week"
+    sources: [pos_transactions]
+    owner: "Category Manager, New Launches"
+    materiality:
+      statistical: "BOCPD posterior, reported with an explicit low-confidence flag under 8 weeks of history"
+      business_impact_pct_threshold: 0.10
+      business_impact_abs_usd_threshold: null
+    lineage:
+      - "pos_transactions.gross_revenue -> weekly region x category aggregate, categories under the maturity bar only"
+    access_tags: [region_scoped]
+
+# Roles referenced by the L4 entitlement compiler (see engine/l4_compiler.py).
+# Row-level: region scope. Column-level: rep-level detail visibility.
+# Deny-by-default — a role sees nothing outside what is explicitly granted here.
+entitlements:
+  ops_manager_west:
+    description: "Category/Ops manager for Region West. Needs full tactical detail for their own region, including which reps' accounts are affected."
+    row_scope:
+      region: [West]
+    column_scope:
+      rep_detail_restricted: allow
+    persona: ops_manager
+
+  regional_vp:
+    description: "Regional VP with cross-region visibility for strategic oversight, but not individual rep-level HR/compensation detail — that stays with the ops manager who owns the relationship."
+    row_scope:
+      region: [West, East, Central]
+    column_scope:
+      rep_detail_restricted: deny
+    persona: exec_vp
