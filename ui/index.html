@@ -39,6 +39,17 @@
   </div>
 
   <div class="panel">
+    <h2>Priority Queue &mdash; What To Investigate First</h2>
+    <p class="subtext">Objective 1's second half: detecting a material movement isn't the same as knowing which one to look at first when several clear the gate at once. Ranked by business-impact magnitude &times; statistical confidence; movements sharing a region and a nearby onset week are flagged as probably the same underlying event, not three separate problems.</p>
+    <div id="priorityQueue" class="loading">Loading&hellip;</div>
+  </div>
+
+  <div class="panel" id="contradictionPanel" style="display:none">
+    <h2>Contradictory Evidence Check</h2>
+    <div id="contradictionContent"></div>
+  </div>
+
+  <div class="panel">
     <h2>Hypotheses Tested (click a card for evidence)</h2>
     <div class="cards" id="hypothesisCards"><div class="loading">Loading&hellip;</div></div>
   </div>

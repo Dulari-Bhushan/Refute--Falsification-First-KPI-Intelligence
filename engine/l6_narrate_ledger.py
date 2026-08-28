@@ -74,6 +74,11 @@ CREATE TABLE IF NOT EXISTS ledger (
     predicted_direction TEXT,
     predicted_magnitude_pct REAL,
     scored_outcome TEXT,
+    treatment_sql_hash TEXT,
+    control_sql_hash TEXT,
+    treatment_sql TEXT,
+    control_sql TEXT,
+    dim TEXT,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS telemetry (
@@ -102,9 +107,30 @@ CREATE TABLE IF NOT EXISTS feedback (
 """
 
 
+LEDGER_MIGRATIONS = [
+    "ALTER TABLE ledger ADD COLUMN treatment_sql_hash TEXT",
+    "ALTER TABLE ledger ADD COLUMN control_sql_hash TEXT",
+    "ALTER TABLE ledger ADD COLUMN treatment_sql TEXT",
+    "ALTER TABLE ledger ADD COLUMN control_sql TEXT",
+    "ALTER TABLE ledger ADD COLUMN dim TEXT",
+]
+
+
 def get_ledger() -> sqlite3.Connection:
     conn = sqlite3.connect(LEDGER_PATH)
     conn.executescript(SCHEMA)
+    # CREATE TABLE IF NOT EXISTS doesn't add columns to a table that
+    # already existed under an older schema -- an existing ledger.sqlite
+    # from before the SQL-traceability columns were added would otherwise
+    # silently keep missing them. Each ALTER is idempotent-by-catch: it
+    # fails (harmlessly) once the column already exists, on every run
+    # after the first.
+    for migration in LEDGER_MIGRATIONS:
+        try:
+            conn.execute(migration)
+        except sqlite3.OperationalError:
+            pass  # column already exists
+    conn.commit()
     return conn
 
 
@@ -139,8 +165,9 @@ def write_ledger_entries(ledger: sqlite3.Connection, run_id: str, outcomes: list
         ledger.execute(
             """INSERT INTO ledger (run_id, hypothesis_id, test_archetype, verdict, reason, did_effect_pct,
                did_pvalue_raw, did_pvalue_bh, mde_pct, plausible_effect_pct, predicted_direction,
-               predicted_magnitude_pct, scored_outcome, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               predicted_magnitude_pct, scored_outcome, treatment_sql_hash, control_sql_hash,
+               treatment_sql, control_sql, dim, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 run_id,
                 o.hypothesis_id,
@@ -155,6 +182,11 @@ def write_ledger_entries(ledger: sqlite3.Connection, run_id: str, outcomes: list
                 predicted_direction if o.verdict == "SURVIVED" else None,
                 abs(o.did_effect * 100) if (o.verdict == "SURVIVED" and o.did_effect is not None) else None,
                 "uncalibrated",  # see main() honesty note: fewer than 30 scored outcomes exist yet
+                getattr(o, "treatment_sql_hash", None),
+                getattr(o, "control_sql_hash", None),
+                getattr(o, "treatment_sql", None),
+                getattr(o, "control_sql", None),
+                getattr(o, "dim", None),
                 now,
             ),
         )
@@ -168,7 +200,36 @@ def write_ledger_entries(ledger: sqlite3.Connection, run_id: str, outcomes: list
 # --------------------------------------------------------------------------
 
 
-def build_action_recommendation(l2_results: dict, survived_outcome) -> dict:
+def check_capacity_constraint(contract: dict, region: str = "West") -> dict:
+    """Objective 6: a recommended lever isn't "grounded in business
+    constraints" if nothing checks whether the team can actually execute
+    it. Reads crm_headcount.assigned_accounts directly (not a fabricated
+    number) and compares the departed reps' account load against the
+    staying reps' real headroom under the semantic contract's
+    max_accounts_per_rep ceiling."""
+    crm = pd.read_csv(DATA_DIR / "crm_headcount.csv")
+    latest_month = crm[crm.region == region]["month"].max()
+    snapshot = crm[(crm.region == region) & (crm.month == latest_month)]
+
+    departed = snapshot[snapshot["attrition_date"].notna()]
+    staying = snapshot[snapshot["attrition_date"].isna()]
+
+    accounts_needing_reassignment = int(departed["assigned_accounts"].sum())
+    ceiling = contract["operational_constraints"]["max_accounts_per_rep"]["value"]
+    headroom = int((ceiling - staying["assigned_accounts"]).clip(lower=0).sum())
+
+    fits = accounts_needing_reassignment <= headroom
+    shortfall = max(0, accounts_needing_reassignment - headroom)
+    return {
+        "accounts_needing_reassignment": accounts_needing_reassignment,
+        "staying_rep_headroom": headroom,
+        "max_accounts_per_rep_ceiling": ceiling,
+        "fits_within_capacity": fits,
+        "shortfall": shortfall,
+    }
+
+
+def build_action_recommendation(l2_results: dict, survived_outcome, contract: dict | None = None) -> dict:
     departed_share = None
     departed_loss_usd = 0.0
     for row in l2_results.get("rep_contribution", []):
@@ -178,14 +239,27 @@ def build_action_recommendation(l2_results: dict, survived_outcome) -> dict:
     if region_loss:
         departed_share = departed_loss_usd / region_loss
 
+    action_text = "Reassign the four departed reps' accounts to active West team members this week."
+    constraint = None
+    if contract is not None:
+        constraint = check_capacity_constraint(contract)
+        if not constraint["fits_within_capacity"]:
+            action_text = (
+                f"Reassign as many of the {constraint['accounts_needing_reassignment']} departed-rep accounts as fit within "
+                f"existing team capacity now ({constraint['staying_rep_headroom']} accounts of headroom under the "
+                f"{constraint['max_accounts_per_rep_ceiling']}-account-per-rep ceiling); the remaining {constraint['shortfall']} "
+                "need a phased plan (temporary coverage or a hire), not a same-week full reassignment -- the team physically doesn't have room for all of it at once."
+            )
+
     return {
         "driver": "rep_attrition",
         "controllable_lever": "account reassignment / territory staffing",
-        "action": "Reassign the four departed reps' accounts to active West team members this week.",
+        "action": action_text,
         "expected_impact": f"~${abs(departed_loss_usd):,.0f}/month recoverable (departed reps accounted for ~{departed_share:.0%} of the region's revenue loss)" if departed_share else "See ledger for effect size.",
         "owner": "West Regional Ops Manager",
         "confidence": f"High -- BH-adjusted p={survived_outcome.did_pvalue_bh:.4f}, {abs(survived_outcome.did_effect) * 100:.0f}pp differential effect vs. active reps' accounts, survives the placebo test." if survived_outcome and survived_outcome.did_pvalue_bh is not None else "See ledger.",
         "monitoring_plan": "Track West weekly revenue and rep_attributed_revenue for the reassigned accounts over the next 4 weeks; expect recovery toward the pre-attrition baseline if reassignment succeeds. If it doesn't recover, treat that as new evidence and re-open the investigation.",
+        "capacity_constraint": constraint,
     }
 
 
@@ -364,6 +438,12 @@ def submit_feedback(ledger: sqlite3.Connection, run_id: str, original_hypothesis
         return {"accepted": False, "reason": "Counter-hypothesis could not be adjudicated (panel could not be built -- check treatment/control dims exist in this region)."}
     counter_verdict = counter_outcome.verdict
 
+    # the counter-hypothesis is a first-class verdict, not a footnote in a
+    # separate table -- it goes into the SAME ledger every other hypothesis
+    # does, tagged with this feedback run_id, so anything reading verdicts
+    # (the contradictory-evidence check, the UI, a future analyst) sees it.
+    write_ledger_entries(ledger, run_id, [counter_outcome])
+
     ledger.execute(
         """INSERT INTO feedback (run_id, original_hypothesis_id, original_verdict, analyst_role, correction_text,
            counter_hypothesis_id, counter_verdict, created_at) VALUES (?,?,?,?,?,?,?,?)""",
@@ -384,6 +464,70 @@ def submit_feedback(ledger: sqlite3.Connection, run_id: str, original_hypothesis
             else f"Counter-hypothesis '{predicate.hypothesis_id}' did not survive ({counter_verdict}) -- original verdict for '{original_hypothesis_id}' stands, but the correction is on record."
         ),
     }
+
+
+def detect_contradictory_verdicts(ledger: sqlite3.Connection, hypothesis_ids: list[str] | None = None) -> dict | None:
+    """Objective 5's second clause -- "abstains when evidence is
+    insufficient OR CONTRADICTORY". The power gate and INCONCLUSIVE verdict
+    already cover "insufficient" thoroughly (see engine/l5_adjudicate.py).
+    This covers the other half: what the system does when there's too MUCH
+    evidence, pointing in different directions -- multiple SURVIVED
+    verdicts for the same underlying question.
+
+    That case is not hypothetical here: submit_feedback()'s counter-
+    hypothesis mechanism genuinely produces it (an analyst's correction can
+    itself survive testing). This function distinguishes two very
+    different situations a naive "2 hypotheses survived" check would
+    conflate:
+      - SAME EVIDENCE: both survived hypotheses compiled to the identical
+        treatment/control SQL (same hash) -- they're not independent
+        corroboration, they're the same comparison narrated two different
+        ways. Reported as such, not inflated into "two lines of evidence."
+      - INDEPENDENT EVIDENCE: different SQL entirely, both still survived
+        -- genuine contradiction. This is the case that should make a
+        human stop and look, and the system says so explicitly rather than
+        picking a winner on its own authority."""
+    query = "SELECT hypothesis_id, verdict, treatment_sql_hash, control_sql_hash, reason FROM ledger WHERE verdict = 'SURVIVED'"
+    params: list = []
+    if hypothesis_ids:
+        placeholders = ",".join("?" for _ in hypothesis_ids)
+        query += f" AND hypothesis_id IN ({placeholders})"
+        params = hypothesis_ids
+    query += " ORDER BY id DESC"
+
+    rows = ledger.execute(query, params).fetchall()
+    # dedupe to the most recent verdict per hypothesis_id
+    seen: dict[str, tuple] = {}
+    for hyp_id, verdict, t_hash, c_hash, reason in rows:
+        if hyp_id not in seen:
+            seen[hyp_id] = (verdict, t_hash, c_hash, reason)
+
+    if len(seen) < 2:
+        return None  # no contradiction -- 0 or 1 survivors is the normal case
+
+    items = [{"hypothesis_id": k, "treatment_sql_hash": v[1], "control_sql_hash": v[2], "reason": v[3]} for k, v in seen.items()]
+    hash_pairs = {(it["treatment_sql_hash"], it["control_sql_hash"]) for it in items}
+    same_evidence = len(hash_pairs) == 1 and None not in hash_pairs
+
+    if same_evidence:
+        verdict_type = "SAME_EVIDENCE_RETEST"
+        explanation = (
+            f"{len(items)} hypotheses currently show SURVIVED, but they compile to the identical SQL query "
+            "(same treatment/control comparison) -- this is one piece of evidence narrated two ways, not "
+            "independent corroboration. Reviewing which mechanism-story is the better explanation is a human "
+            "judgment call; the statistical evidence itself doesn't distinguish between them."
+        )
+    else:
+        verdict_type = "INDEPENDENT_CONTRADICTION"
+        explanation = (
+            f"{len(items)} hypotheses currently show SURVIVED via genuinely DIFFERENT tests (different SQL, "
+            "different treatment/control comparisons) -- this is real contradictory evidence, not a duplicate. "
+            "The system is NOT resolving this on its own authority: both are reported, both are on record, and "
+            "a human needs to adjudicate which mechanism (or what combination) is actually driving the movement. "
+            "A dose-response test or a longer observation window on the losing dimension would help disambiguate."
+        )
+
+    return {"verdict_type": verdict_type, "survived_hypotheses": items, "explanation": explanation}
 
 
 def main() -> None:
@@ -431,7 +575,7 @@ def main() -> None:
     ledger.row_factory = None
 
     with telemetry_span(ledger, run_id, "L6_narrate", is_llm_call=False):
-        action = build_action_recommendation(l2_results, survived_outcome)
+        action = build_action_recommendation(l2_results, survived_outcome, contract)
         ops_brief = render_ops_manager_brief(outcomes, action)
         vp_brief = render_vp_brief(outcomes, action, role="regional_vp", region="West", contract=contract)
         engineer_brief = render_engineer_brief(outcomes, action, all_telemetry)
@@ -482,12 +626,17 @@ def main() -> None:
     }
     result = submit_feedback(ledger, run_id, "h_rep_attrition", "ops_manager_west", "I don't think it's really attrition -- feels like general demand softness to me.", counter_predicate)
     print(json.dumps(result, indent=2))
-    print(
-        "\nNote: this independent re-test reaches the same conclusion via the same evidence (staying reps' "
-        "accounts stayed flat) -- a legitimate outcome of feedback, not every correction has to change the "
-        "verdict to be worth running. The 'downgraded pending review' flag exists for a human to see two "
-        "converging tests and a recorded provenance trail, not to silently auto-resolve the disagreement."
-    )
+
+    # --- contradictory-evidence detection: objective 5's second clause ---
+    contradiction = detect_contradictory_verdicts(ledger, hypothesis_ids=["h_rep_attrition", result.get("counter_hypothesis_id")])
+    print("\n=== Contradictory-evidence check (objective 5: abstain when evidence is insufficient OR contradictory) ===")
+    if contradiction is None:
+        print("  No contradiction: fewer than two hypotheses currently SURVIVED for this comparison.")
+    else:
+        print(f"  Type: {contradiction['verdict_type']}")
+        print(f"  {contradiction['explanation']}")
+        for item in contradiction["survived_hypotheses"]:
+            print(f"    {item['hypothesis_id']}: sql_hash=({item['treatment_sql_hash']}, {item['control_sql_hash']})")
 
     ledger.close()
 

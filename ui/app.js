@@ -104,6 +104,15 @@ function renderHypothesisCards(templated) {
         ${h.parallel_trends_pvalue !== null && h.parallel_trends_pvalue !== undefined ? `<div>parallel-trends p: ${h.parallel_trends_pvalue.toFixed(3)}</div>` : ""}
         <div>dim: ${h.dim} (${h.n_treatment_units} treatment unit(s) vs ${h.n_control_units} control)</div>
         ${(h.notes || []).map((n) => `<div>note: ${n}</div>`).join("")}
+        ${h.treatment_sql_hash ? `
+        <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
+          <div>treatment SQL hash: <span style="color:var(--accent)">${h.treatment_sql_hash}</span></div>
+          <div>control SQL hash: <span style="color:var(--accent)">${h.control_sql_hash}</span></div>
+          <details style="margin-top:4px" onclick="event.stopPropagation()">
+            <summary style="cursor:pointer;color:var(--text-faint)">show generated SQL (auditable -- same predicate always compiles to this exact query)</summary>
+            <pre style="white-space:pre-wrap;font-size:10px;color:var(--text-dim);margin:6px 0 0">-- treatment\n${h.treatment_sql}\n\n-- control\n${h.control_sql}</pre>
+          </details>
+        </div>` : `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);color:var(--text-faint)">No SQL hash -- this is a precedence test (BOCPD timing comparison, not a database query; see notes above).</div>`}
       </div>
     `;
     card.addEventListener("click", () => card.classList.toggle("open"));
@@ -119,6 +128,14 @@ function renderAction(data) {
     return;
   }
   const a = data.action;
+  const c = a.capacity_constraint;
+  const constraintHtml = c
+    ? `<div class="k">Constraint</div><div style="color:${c.fits_within_capacity ? "var(--survived)" : "var(--inconclusive)"}">
+        ${c.fits_within_capacity
+          ? `Fits within capacity: ${c.accounts_needing_reassignment} accounts needed, ${c.staying_rep_headroom} headroom available.`
+          : `Does NOT fully fit within capacity: ${c.accounts_needing_reassignment} accounts needed vs. ${c.staying_rep_headroom} headroom (ceiling ${c.max_accounts_per_rep_ceiling}/rep) -- ${c.shortfall} accounts short, action qualified accordingly.`}
+      </div>`
+    : "";
   el.innerHTML = `<div class="action-grid">
     <div class="k">Driver</div><div>${a.driver}</div>
     <div class="k">Lever</div><div>${a.controllable_lever}</div>
@@ -127,7 +144,44 @@ function renderAction(data) {
     <div class="k">Owner</div><div>${a.owner}</div>
     <div class="k">Confidence</div><div>${a.confidence}</div>
     <div class="k">Monitoring</div><div>${a.monitoring_plan}</div>
+    ${constraintHtml}
   </div>`;
+}
+
+// ---------------------------------------------------------------- priority queue
+function renderPriorities(priorities) {
+  const el = document.getElementById("priorityQueue");
+  if (!priorities || priorities.length === 0) {
+    el.innerHTML = `<div class="subtext">No material movements currently in the queue.</div>`;
+    return;
+  }
+  el.innerHTML = priorities
+    .map((p) => {
+      const sameEvent = p.likely_same_event_as.length ? `<span class="subtext"> (likely same event as: ${p.likely_same_event_as.join(", ")})</span>` : "";
+      return `<div class="brief-line">
+        <span class="brief-label">#${p.rank} ${p.kpi} (${p.region})</span>
+        <div>impact ${fmtPct(p.business_impact_pct)} ($${Math.abs(p.business_impact_abs_usd).toLocaleString(undefined, { maximumFractionDigits: 0 })}), confidence ${p.changepoint_posterior_recent.toFixed(2)}, week ${p.changepoint_week}${sameEvent}</div>
+      </div>`;
+    })
+    .join("");
+}
+
+// ---------------------------------------------------------------- contradictory evidence
+function renderContradiction(data) {
+  const panel = document.getElementById("contradictionPanel");
+  const el = document.getElementById("contradictionContent");
+  const c = data.contradiction;
+  if (!c) {
+    panel.style.display = "none";
+    return;
+  }
+  panel.style.display = "";
+  const typeLabel = c.verdict_type === "SAME_EVIDENCE_RETEST" ? "Same evidence, re-tested" : "Independent contradiction";
+  const color = c.verdict_type === "SAME_EVIDENCE_RETEST" ? "var(--text-dim)" : "var(--inconclusive)";
+  el.innerHTML = `
+    <div class="brief-line"><span class="brief-label" style="color:${color}">${typeLabel}</span><div>${c.explanation}</div></div>
+    ${c.survived_hypotheses.map((h) => `<div class="subtext">${h.hypothesis_id}: sql=(${h.treatment_sql_hash || "n/a"}, ${h.control_sql_hash || "n/a"})</div>`).join("")}
+  `;
 }
 
 // ---------------------------------------------------------------- freshness table
@@ -201,7 +255,8 @@ async function renderBrief(role) {
         const stats = h.did_effect !== null && h.did_effect !== undefined
           ? `effect=${fmtPct(h.did_effect)} p_raw=${h.did_pvalue_raw?.toFixed(4) ?? "n/a"} p_BH=${h.did_pvalue_bh?.toFixed(4) ?? "n/a"} MDE=${fmtPct(h.mde)} floor=${fmtPct(h.plausible_effect)} pretrends_p=${h.parallel_trends_pvalue?.toFixed(3) ?? "n/a"}`
           : "(precedence test -- no DiD regression, see notes)";
-        return `<div class="brief-line"><span class="brief-label">${h.hypothesis_id} [${h.verdict}]</span><div style="font-family:var(--mono);font-size:11px">${stats}</div></div>`;
+        const hashLine = h.treatment_sql_hash ? `sql: ${h.treatment_sql_hash} / ${h.control_sql_hash}` : "sql: n/a (precedence test)";
+        return `<div class="brief-line"><span class="brief-label">${h.hypothesis_id} [${h.verdict}]</span><div style="font-family:var(--mono);font-size:11px">${stats}</div><div style="font-family:var(--mono);font-size:11px;color:var(--text-faint)">${hashLine}</div></div>`;
       })
       .join("");
     briefEl.innerHTML = `${rows}<div class="brief-line" style="margin-top:10px"><span class="brief-label">Note</span><div>See Methods Breakdown below for which method category (statistics / SQL / causal inference / LLM / etc.) produced each number, and why.</div></div>`;
@@ -327,7 +382,7 @@ function renderAdversarial(data) {
 
 // ---------------------------------------------------------------- init
 async function init() {
-  const [kpi, hypData, action, evidence, telemetry, methods, counterfactual, adversarial] = await Promise.all([
+  const [kpi, hypData, action, evidence, telemetry, methods, counterfactual, adversarial, priorities, contradictions] = await Promise.all([
     getJSON(`/api/kpi-series?region=${STATE.region}&kpi=revenue`),
     getJSON("/api/hypotheses"),
     getJSON("/api/action-recommendation"),
@@ -336,6 +391,8 @@ async function init() {
     getJSON("/api/methods-breakdown"),
     getJSON(`/api/counterfactual?region=${STATE.region}`),
     getJSON("/api/adversarial-challenges"),
+    getJSON("/api/priorities"),
+    getJSON("/api/contradictions"),
   ]);
 
   document.getElementById("kpiValue").textContent = fmtPct(kpi.business_impact_pct);
@@ -372,6 +429,8 @@ async function init() {
   renderMethodsBreakdown(methods);
   renderCounterfactual(counterfactual);
   renderAdversarial(adversarial);
+  renderPriorities(priorities);
+  renderContradiction(contradictions);
 
   await renderBrief(STATE.role);
 
@@ -415,6 +474,7 @@ async function init() {
       const data = await res.json();
       resultEl.className = "feedback-result show";
       resultEl.innerHTML = `<strong>${data.counter_hypothesis_id}</strong> &rarr; <span class="verdict-badge ${verdictClass(data.counter_verdict)}">${data.counter_verdict}</span><br><br>${data.note}`;
+      renderContradiction({ contradiction: data.contradiction });
     } catch (e) {
       resultEl.className = "feedback-result show";
       resultEl.textContent = `Error: ${e.message}`;
