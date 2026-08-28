@@ -194,6 +194,61 @@ def test_rep_attribution_within_revenue_bounds(sources: dict[str, pd.DataFrame],
     return claim
 
 
+def compute_missing_data_rates(sources: dict[str, pd.DataFrame], panel: pd.DataFrame) -> list[dict]:
+    """GAPS.md item 6: an inner or left join silently drops or NaNs
+    unmatched rows -- freshness/staleness above answers "how current is
+    each source" but says nothing about "how much of it actually joined."
+    This makes that a visible, quantified fact instead of a fabricated one,
+    by re-checking the exact joins the rest of this module already performs
+    (not a separately invented metric): how much of the LEFT side of each
+    join found no match on the right."""
+    rows = []
+
+    pos = sources["pos_transactions"].copy()
+    pos["month"] = pos["date"].dt.to_period("M").astype(str)
+    pos_monthly = pos.groupby(["month", "region"])["gross_revenue"].sum().reset_index()
+    matched = pos_monthly.merge(sources["finance_gl_extract"], on=["month", "region"], how="inner")
+    rows.append(_missing_row("pos_transactions -> finance_gl_extract (revenue-agreement join)", len(pos_monthly), len(matched)))
+
+    rep_monthly = sources["crm_headcount"].groupby(["region", "month"])["rep_attributed_revenue_usd"].sum().reset_index()
+    revenue_monthly = pos.groupby(["region", "month"])["gross_revenue"].sum().reset_index()
+    matched2 = rep_monthly.merge(revenue_monthly, on=["region", "month"], how="inner")
+    rows.append(_missing_row("crm_headcount -> pos_transactions (rep-attribution-bounds join)", len(rep_monthly), len(matched2)))
+
+    # the reconciled weekly panel's own left-joins (marketing_spend, then
+    # crm_headcount, onto the pos-transactions-derived weekly base) -- an
+    # unmatched region-week leaves NaN in these columns post-merge, so their
+    # null rate IS the missing-match rate, not a proxy for it.
+    rows.append(_missing_row_from_nulls("pos_transactions weekly base -> marketing_spend (reconciled panel left-join)", panel, "marketing_attributed_revenue"))
+    rows.append(_missing_row_from_nulls("pos_transactions weekly base -> crm_headcount (reconciled panel left-join)", panel, "rep_attributed_revenue"))
+
+    return rows
+
+
+def _missing_row(join_description: str, expected: int, matched: int) -> dict:
+    missing = expected - matched
+    missing_pct = (missing / expected) if expected else 0.0
+    return {
+        "join": join_description,
+        "expected_rows": int(expected),
+        "matched_rows": int(matched),
+        "missing_rows": int(missing),
+        "missing_pct": round(missing_pct * 100, 2),
+    }
+
+
+def _missing_row_from_nulls(join_description: str, panel: pd.DataFrame, column: str) -> dict:
+    expected = len(panel)
+    missing = int(panel[column].isna().sum())
+    return {
+        "join": join_description,
+        "expected_rows": int(expected),
+        "matched_rows": int(expected - missing),
+        "missing_rows": missing,
+        "missing_pct": round((missing / expected) * 100, 2) if expected else 0.0,
+    }
+
+
 def apply_maturity_rule(pos: pd.DataFrame, contract: dict) -> pd.DataFrame:
     """Core revenue/units_sold exclude any category still inside its
     maturity window (revenue.maturity_rule in the KPI contract) -- a
@@ -280,6 +335,7 @@ def main() -> None:
     attribution_bounds = test_rep_attribution_within_revenue_bounds(sources, contract)
     panel = build_reconciled_weekly_panel(sources, contract)
     category_panel = build_category_weekly_panel(sources, contract)
+    missing_data_rates = compute_missing_data_rates(sources, panel)
 
     panel.to_csv(DATA_DIR / "reconciled_weekly.csv", index=False)
     category_panel.to_csv(DATA_DIR / "reconciled_weekly_by_category.csv", index=False)
@@ -288,6 +344,7 @@ def main() -> None:
         "source_freshness": freshness,
         "revenue_source_agreement_claim": agreement,
         "rep_attribution_bounds_claim": attribution_bounds,
+        "missing_data_rates": missing_data_rates,
         "reconciled_panel_grain": "region x week",
         "reconciled_kpis": ["revenue", "units_sold", "marketing_attributed_revenue_share", "rep_attributed_revenue"],
     }
@@ -303,6 +360,10 @@ def main() -> None:
     print()
     print(f"Rep-attribution bounds claim: {attribution_bounds['verdict']}")
     print(f"  {attribution_bounds.get('explanation', attribution_bounds['observed'])}")
+    print()
+    print("Missing-data rates (per join, not per source -- a join can be 0% missing while a source is stale):")
+    for row in missing_data_rates:
+        print(f"  {row['join']:<70} {row['missing_rows']:>3}/{row['expected_rows']:<3} missing ({row['missing_pct']}%)")
     print()
     print(f"Reconciled panel: {len(panel)} region-week rows -> {DATA_DIR / 'reconciled_weekly.csv'}")
 

@@ -180,6 +180,7 @@ entitlements:
       rep_detail_restricted: allow
     domain_scope: [sales, marketing, hr]
     persona: ops_manager
+    delivery_channels: [slack_channel, dashboard]
 
   regional_vp:
     description: "Regional VP with cross-region visibility for strategic oversight, but not individual rep-level HR/compensation detail — that stays with the ops manager who owns the relationship. Domain-scoped to deny hr outright, not just the rep_id dimension: this VP shouldn't see the rep_attributed_revenue KPI's aggregate trend either, only the ops manager who owns that relationship should."
@@ -189,6 +190,7 @@ entitlements:
       rep_detail_restricted: deny
     domain_scope: [sales, marketing]
     persona: exec_vp
+    delivery_channels: [email_digest, dashboard]
 
   marketing_analyst:
     description: "Owns campaign spend/attribution analysis. Needs the marketing domain only -- not sales KPIs (revenue, units, category detail) and never hr. Exists specifically to demonstrate domain-level denial is a distinct mechanism from row/column scope: this role can't even ask about the 'revenue' KPI at all, regardless of region or dimension, because sales isn't in its domain_scope."
@@ -198,6 +200,7 @@ entitlements:
       rep_detail_restricted: deny
     domain_scope: [marketing]
     persona: marketing_analyst
+    delivery_channels: [dashboard]
 
   platform_engineer:
     description: "Engineer maintaining/auditing the REFUTE pipeline itself. Full cross-region and rep-level visibility -- not because engineers outrank the VP in the org chart, but because auditing a verdict (checking a SQL hash, re-running a query, debugging why a test came back INCONCLUSIVE) requires seeing exactly what the compiler saw. This role exists to demonstrate that entitlements are about job function, not seniority."
@@ -207,3 +210,14 @@ entitlements:
     column_scope:
       rep_detail_restricted: allow
     persona: engineer
+    delivery_channels: [dashboard]
+
+# Delivery-channel policy per role (GAPS.md item 7): the pull-only channel
+# ("dashboard") is always available to everyone -- these list the ADDITIONAL
+# push channel(s) a role can be interrupted through, in priority order. An
+# ops manager needs a push alert to act same-day; a VP wants a digest, not
+# an interrupt, for the same fact; an analyst/engineer role that owns no
+# lever here has no push channel at all -- see
+# engine.l6_narrate_ledger.determine_delivery_channel for the actual
+# per-brief routing decision (urgency-gated, not just "whatever's listed
+# first").

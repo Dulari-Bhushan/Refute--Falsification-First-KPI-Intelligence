@@ -116,6 +116,18 @@
     <div id="domainCheckContent" class="loading">Loading&hellip;</div>
   </div>
 
+  <div class="panel">
+    <h2>Entitlement Audit Log</h2>
+    <p class="subtext">Every row/column and domain-level decision anywhere &mdash; a real pipeline run's compile-time checks, or every persona-tab switch and domain-check above &mdash; persisted here, newest first. "What evidence supports a verdict" was already auditable; this is "who tried to access what and was denied."</p>
+    <div id="entitlementLogContent" class="loading">Loading&hellip;</div>
+  </div>
+
+  <div class="panel">
+    <h2>Delivery-Channel Routing &mdash; <span style="color:var(--inconclusive)">Simulated</span></h2>
+    <p class="subtext">No real Slack/email API is ever called &mdash; REFUTE has no such credentials, and pretending otherwise would be exactly the kind of dishonest placeholder this project rejects elsewhere. What's real: the routing decision itself, urgency-gated on this run's actual confirmed-action state, not a fixed lookup.</p>
+    <div id="deliveryLogContent" class="loading">Loading&hellip;</div>
+  </div>
+
 </main>
 
 <script src="app.js"></script>

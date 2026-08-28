@@ -65,6 +65,36 @@
     "verdict": "CONSTRAINT_HOLDS",
     "explanation": "Attribution ratio stays within bounds everywhere (max 13.0% of region revenue, in East 2025-09) -- no double-counting detected across 27 region-months checked."
   },
+  "missing_data_rates": [
+    {
+      "join": "pos_transactions -> finance_gl_extract (revenue-agreement join)",
+      "expected_rows": 30,
+      "matched_rows": 27,
+      "missing_rows": 3,
+      "missing_pct": 10.0
+    },
+    {
+      "join": "crm_headcount -> pos_transactions (rep-attribution-bounds join)",
+      "expected_rows": 27,
+      "matched_rows": 27,
+      "missing_rows": 0,
+      "missing_pct": 0.0
+    },
+    {
+      "join": "pos_transactions weekly base -> marketing_spend (reconciled panel left-join)",
+      "expected_rows": 120,
+      "matched_rows": 120,
+      "missing_rows": 0,
+      "missing_pct": 0.0
+    },
+    {
+      "join": "pos_transactions weekly base -> crm_headcount (reconciled panel left-join)",
+      "expected_rows": 120,
+      "matched_rows": 117,
+      "missing_rows": 3,
+      "missing_pct": 2.5
+    }
+  ],
   "reconciled_panel_grain": "region x week",
   "reconciled_kpis": [
     "revenue",

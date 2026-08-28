@@ -11,8 +11,8 @@
     ],
     "accepted": true,
     "predicate": {
-      "hypothesis_id": "h_accessories_pricing_discussion",
-      "mechanism": "A discussion about new pricing for accessories led to customer pushback, potentially affecting accessory sales in the West region.",
+      "hypothesis_id": "h_support_ticket_accessories_pricing",
+      "mechanism": "The introduction of new pricing policies for accessories led to customer pushback, potentially affecting sales in the West region.",
       "test_archetype": "specificity",
       "treatment": {
         "dim": "product_category",
@@ -33,18 +33,18 @@
         "expect": "decline"
       },
       "temporal": {
-        "cause_onset": "2023-09-30",
-        "kpi_onset": "2023-11-01"
+        "cause_onset": "2023-03-31",
+        "kpi_onset": "2023-04-30"
       },
       "refutes_if": {
-        "condition": "The revenue decline in the West region does not specifically affect the Accessories category",
-        "rationale": "If the revenue decline is due to issues specific to Accessories, then the revenue in other categories should remain stable."
+        "condition": "The revenue decline in the West region does not occur specifically for the Accessories category",
+        "rationale": "If the decline in revenue in the West region is not limited to the Accessories category, it would suggest that the pricing policy change did not significantly impact accessory sales."
       }
     },
-    "reason": "Accepted on attempt 1.",
-    "prompt_tokens": 580,
-    "completion_tokens": 204,
-    "latency_ms": 11259.198300016578
+    "reason": "Cache hit (originally generated 2026-08-28T19:39:57.073080+00:00, 1 hit(s) so far): Accepted on attempt 1.",
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "latency_ms": 0.0
   },
   {
     "cluster_id": 5,
@@ -56,10 +56,39 @@
       "competitor new",
       "competitor product"
     ],
-    "accepted": false,
-    "predicate": null,
-    "reason": "Rejected after 3 attempts. Last reason: attempt 3: 'None' is not a valid value for dimension 'product_category' -- got ['Electronics', 'Home', 'Apparel', 'Accessories', 'None'], valid set is ['Accessories', 'Apparel', 'Electronics', 'Home'].",
-    "prompt_tokens": 580,
+    "accepted": true,
+    "predicate": {
+      "hypothesis_id": "h_support_ticket_cluster_effect",
+      "mechanism": "The increase in competitor activity and product launches coincided with a decrease in customer interest in the company's products, leading to a drop in revenue.",
+      "test_archetype": "specificity",
+      "treatment": {
+        "dim": "product_category",
+        "in": [
+          "Electronics",
+          "Home"
+        ]
+      },
+      "control": {
+        "dim": "product_category",
+        "in": [
+          "Accessories"
+        ]
+      },
+      "outcome": {
+        "metric": "revenue",
+        "expect": "decline"
+      },
+      "temporal": {
+        "cause_onset": "2023-02-28",
+        "kpi_onset": "2023-03-31"
+      },
+      "refutes_if": {
+        "condition": "The revenue decline in the treated product categories ('Electronics', 'Home') is less than expected compared to the control product categories ('Accessories') following the onset of the support ticket cluster.",
+        "rationale": "If the decline in revenue is similar across both treated and control categories, it would suggest that the competitor activity and product launches did not significantly impact the demand for the company's products."
+      }
+    },
+    "reason": "Cache hit (originally generated 2026-08-28T19:40:06.453617+00:00, 1 hit(s) so far): Accepted on attempt 1.",
+    "prompt_tokens": 0,
     "completion_tokens": 0,
     "latency_ms": 0.0
   },
@@ -75,8 +104,8 @@
     ],
     "accepted": true,
     "predicate": {
-      "hypothesis_id": "h_support_ticket_delivery_issue",
-      "mechanism": "The delay in deliveries from the WEST_DC fulfillment center, reported in support tickets, likely caused a decline in revenue in the West region by disrupting customer order fulfillment.",
+      "hypothesis_id": "h_ticket_delivery_issue",
+      "mechanism": "The delay in shipments from the WEST_DC fulfillment center caused by the carrier issues reported in the support tickets resulted in a decline in revenue for the WEST region starting week 32.",
       "test_archetype": "specificity",
       "treatment": {
         "dim": "fulfillment_center",
@@ -96,17 +125,17 @@
         "expect": "decline"
       },
       "temporal": {
-        "cause_onset": "2023-01-01",
-        "kpi_onset": "2023-02-01"
+        "cause_onset": "2023-03-31",
+        "kpi_onset": "2023-04-29"
       },
       "refutes_if": {
-        "condition": "The revenue in the West region shows a decline starting week 32, but there is no significant delay or disruption in deliveries from any fulfillment centers except WEST_DC.",
-        "rationale": "If there were no delays or disruptions from any other fulfillment centers, the decline in revenue would not be specific to the WEST_DC center."
+        "condition": "The revenue in the WEST region does not decline starting week 32",
+        "rationale": "If the revenue in the WEST region does not decline despite the carrier issues and delays in shipments from the WEST_DC fulfillment center, it would contradict the proposed mechanism."
       }
     },
-    "reason": "Accepted on attempt 1.",
-    "prompt_tokens": 583,
-    "completion_tokens": 238,
-    "latency_ms": 11637.593599996762
+    "reason": "Cache hit (originally generated 2026-08-28T19:40:14.728736+00:00, 1 hit(s) so far): Accepted on attempt 1.",
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "latency_ms": 0.0
   }
 ]
