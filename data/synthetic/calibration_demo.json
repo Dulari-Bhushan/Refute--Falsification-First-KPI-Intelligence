@@ -1,0 +1,86 @@
+{
+  "label": "SIMULATED BACKTEST -- NOT real production history",
+  "honesty_note": "This is 40 synthetically generated scored outcomes with a deliberately imperfect confidence-accuracy relationship, used to prove the calibration MECHANISM works. The live ledger (data/synthetic/ledger.sqlite) currently has real verdicts but they are all marked scored_outcome='uncalibrated' because nothing has had time to play out yet -- real calibration needs >= 30 real scored outcomes before it would run on production data, per the honesty constraint stated from the original design.",
+  "n_simulated_outcomes": 40,
+  "brier_score": 0.1595,
+  "reliability_diagram": [
+    {
+      "bucket_lo": 0.4,
+      "bucket_hi": 0.6,
+      "n": 6,
+      "mean_predicted_confidence": 0.564,
+      "observed_frequency": 0.0,
+      "calibration_gap": -0.564
+    },
+    {
+      "bucket_lo": 0.6,
+      "bucket_hi": 0.8,
+      "n": 9,
+      "mean_predicted_confidence": 0.701,
+      "observed_frequency": 0.889,
+      "calibration_gap": 0.188
+    },
+    {
+      "bucket_lo": 0.8,
+      "bucket_hi": 1.0,
+      "n": 25,
+      "mean_predicted_confidence": 0.897,
+      "observed_frequency": 0.84,
+      "calibration_gap": -0.057
+    }
+  ],
+  "isotonic_recalibration": {
+    "fitted": true,
+    "curve": [
+      {
+        "raw_confidence": 0.0,
+        "recalibrated_confidence": 0.0
+      },
+      {
+        "raw_confidence": 0.1,
+        "recalibrated_confidence": 0.0
+      },
+      {
+        "raw_confidence": 0.2,
+        "recalibrated_confidence": 0.0
+      },
+      {
+        "raw_confidence": 0.3,
+        "recalibrated_confidence": 0.0
+      },
+      {
+        "raw_confidence": 0.4,
+        "recalibrated_confidence": 0.0
+      },
+      {
+        "raw_confidence": 0.5,
+        "recalibrated_confidence": 0.0
+      },
+      {
+        "raw_confidence": 0.6,
+        "recalibrated_confidence": 0.455
+      },
+      {
+        "raw_confidence": 0.7,
+        "recalibrated_confidence": 0.75
+      },
+      {
+        "raw_confidence": 0.8,
+        "recalibrated_confidence": 0.75
+      },
+      {
+        "raw_confidence": 0.9,
+        "recalibrated_confidence": 0.889
+      },
+      {
+        "raw_confidence": 1.0,
+        "recalibrated_confidence": 1.0
+      }
+    ]
+  },
+  "hit_rate_by_kind": {
+    "obvious_decoy": 0.875,
+    "underpowered": 0.364,
+    "true_cause": 0.846
+  }
+}

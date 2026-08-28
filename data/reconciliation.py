@@ -145,6 +145,55 @@ def test_revenue_source_agreement(sources: dict[str, pd.DataFrame], contract: di
     return claim
 
 
+def test_rep_attribution_within_revenue_bounds(sources: dict[str, pd.DataFrame], contract: dict) -> dict:
+    """A second, DIFFERENT-IN-KIND reconciliation claim from
+    test_revenue_source_agreement above -- that one catches a definitional
+    mismatch (two sources computing the same-named number two different
+    ways). This one catches a LOGICAL CONSISTENCY violation: rep-attributed
+    revenue is a subset of total region revenue by construction (a rep's
+    book can't be worth more than the region that contains it), so if the
+    ratio ever exceeds 100% anywhere, that's not noise -- it's a
+    join/aggregation bug (e.g. double-counting a rep across two account
+    territories) that a naive dashboard would silently plot without ever
+    noticing. Objective 2 asks for reconciling "business context", not
+    just numbers -- a claim like "attribution can't exceed the whole it's
+    attributed from" is exactly business context a numeric comparison
+    alone wouldn't catch."""
+    crm = sources["crm_headcount"].copy()
+    pos = sources["pos_transactions"].copy()
+    pos["month"] = pos["date"].dt.to_period("M").astype(str)
+
+    rep_monthly = crm.groupby(["region", "month"])["rep_attributed_revenue_usd"].sum().reset_index()
+    revenue_monthly = pos.groupby(["region", "month"])["gross_revenue"].sum().reset_index()
+    merged = rep_monthly.merge(revenue_monthly, on=["region", "month"], how="inner")
+    merged["attribution_ratio"] = merged["rep_attributed_revenue_usd"] / merged["gross_revenue"]
+
+    max_ratio = float(merged["attribution_ratio"].max())
+    violated = bool(max_ratio > 1.0)
+    worst = merged.loc[merged["attribution_ratio"].idxmax()]
+
+    claim = {
+        "claim": "rep-attributed revenue never exceeds total region revenue for the same region-month (a rep's book is a subset of the region it's in)",
+        "refutes_if": {
+            "condition": "attribution_ratio > 1.0 for any region-month",
+            "rationale": "Rep-attributed revenue is defined as a portion of total region revenue -- a ratio above 100% means a join or aggregation step double-counted something, not that a rep genuinely out-earned their entire region.",
+        },
+        "observed": {
+            "max_attribution_ratio_pct": round(max_ratio * 100, 2),
+            "n_region_months_compared": int(len(merged)),
+            "worst_region_month": f"{worst['region']} {worst['month']}",
+        },
+        "verdict": "VIOLATED" if violated else "CONSTRAINT_HOLDS",
+    }
+    if not violated:
+        claim["explanation"] = (
+            f"Attribution ratio stays within bounds everywhere (max {max_ratio * 100:.1f}% of region revenue, "
+            f"in {worst['region']} {worst['month']}) -- no double-counting detected across "
+            f"{len(merged)} region-months checked."
+        )
+    return claim
+
+
 def apply_maturity_rule(pos: pd.DataFrame, contract: dict) -> pd.DataFrame:
     """Core revenue/units_sold exclude any category still inside its
     maturity window (revenue.maturity_rule in the KPI contract) -- a
@@ -228,6 +277,7 @@ def main() -> None:
 
     freshness = compute_freshness(sources, contract, as_of)
     agreement = test_revenue_source_agreement(sources, contract)
+    attribution_bounds = test_rep_attribution_within_revenue_bounds(sources, contract)
     panel = build_reconciled_weekly_panel(sources, contract)
     category_panel = build_category_weekly_panel(sources, contract)
 
@@ -237,6 +287,7 @@ def main() -> None:
         "as_of": as_of.isoformat(),
         "source_freshness": freshness,
         "revenue_source_agreement_claim": agreement,
+        "rep_attribution_bounds_claim": attribution_bounds,
         "reconciled_panel_grain": "region x week",
         "reconciled_kpis": ["revenue", "units_sold", "marketing_attributed_revenue_share", "rep_attributed_revenue"],
     }
@@ -249,6 +300,9 @@ def main() -> None:
     print(f"Revenue source-agreement claim: {agreement['verdict']}")
     if agreement["verdict"] == "SOURCES_DIVERGE":
         print(f"  {agreement['explanation']}")
+    print()
+    print(f"Rep-attribution bounds claim: {attribution_bounds['verdict']}")
+    print(f"  {attribution_bounds.get('explanation', attribution_bounds['observed'])}")
     print()
     print(f"Reconciled panel: {len(panel)} region-week rows -> {DATA_DIR / 'reconciled_weekly.csv'}")
 

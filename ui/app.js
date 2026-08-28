@@ -198,7 +198,8 @@ function renderFreshness(recon) {
     <thead><tr><th>Source</th><th>Cadence</th><th>Covered through</th><th>Staleness</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <p class="subtext" style="margin-top:10px">Revenue source agreement: <strong>${recon.revenue_source_agreement_claim.verdict}</strong> &mdash; ${recon.revenue_source_agreement_claim.explanation || "sources agree within tolerance."}</p>`;
+  <p class="subtext" style="margin-top:10px">Revenue source agreement: <strong>${recon.revenue_source_agreement_claim.verdict}</strong> &mdash; ${recon.revenue_source_agreement_claim.explanation || "sources agree within tolerance."}</p>
+  ${recon.rep_attribution_bounds_claim ? `<p class="subtext" style="margin-top:6px">Rep-attribution bounds: <strong>${recon.rep_attribution_bounds_claim.verdict}</strong> &mdash; ${recon.rep_attribution_bounds_claim.explanation || ""}</p>` : ""}`;
 }
 
 // ---------------------------------------------------------------- telemetry
@@ -357,6 +358,33 @@ function renderCounterfactual(cf) {
   setTimeout(redraw, 300);
 }
 
+// ---------------------------------------------------------------- calibration demo
+function renderCalibration(report) {
+  document.getElementById("calibrationHonesty").textContent = report.honesty_note;
+  const el = document.getElementById("calibrationContent");
+  const reliabilityRows = report.reliability_diagram
+    .map((b) => `<tr><td>[${b.bucket_lo.toFixed(1)}-${b.bucket_hi.toFixed(1)})</td><td>${b.n}</td><td>${(b.mean_predicted_confidence * 100).toFixed(0)}%</td><td>${(b.observed_frequency * 100).toFixed(0)}%</td><td style="color:${Math.abs(b.calibration_gap) > 0.15 ? "var(--inconclusive)" : "var(--text-dim)"}">${b.calibration_gap >= 0 ? "+" : ""}${(b.calibration_gap * 100).toFixed(0)}pp</td></tr>`)
+    .join("");
+  const isoRows = report.isotonic_recalibration.fitted
+    ? report.isotonic_recalibration.curve.map((p) => `<span style="font-family:var(--mono)">${p.raw_confidence.toFixed(1)}&rarr;${p.recalibrated_confidence.toFixed(2)}</span>`).join("  ")
+    : "not enough points to fit";
+  const hitRateHtml = Object.entries(report.hit_rate_by_kind)
+    .map(([kind, rate]) => `<span style="margin-right:16px"><span class="brief-label">${kind.replace(/_/g, " ")}</span> ${(rate * 100).toFixed(0)}%</span>`)
+    .join("");
+  el.innerHTML = `
+    <div class="telemetry-strip" style="margin-bottom:16px">
+      <div class="tstat"><div class="n">${report.brier_score.toFixed(3)}</div><div class="l">Brier score (0=perfect)</div></div>
+      <div class="tstat"><div class="n">${report.n_simulated_outcomes}</div><div class="l">simulated outcomes</div></div>
+    </div>
+    <div style="margin-bottom:12px">${hitRateHtml}</div>
+    <table class="evidence-table" style="margin-bottom:12px">
+      <thead><tr><th>Confidence bucket</th><th>n</th><th>Stated</th><th>Observed</th><th>Gap</th></tr></thead>
+      <tbody>${reliabilityRows}</tbody>
+    </table>
+    <div class="subtext"><span class="brief-label">Isotonic recalibration curve</span><br>${isoRows}</div>
+  `;
+}
+
 // ---------------------------------------------------------------- adversarial challenge
 function renderAdversarial(data) {
   const panel = document.getElementById("adversarialPanel");
@@ -382,7 +410,7 @@ function renderAdversarial(data) {
 
 // ---------------------------------------------------------------- init
 async function init() {
-  const [kpi, hypData, action, evidence, telemetry, methods, counterfactual, adversarial, priorities, contradictions] = await Promise.all([
+  const [kpi, hypData, action, evidence, telemetry, methods, counterfactual, adversarial, priorities, contradictions, calibration] = await Promise.all([
     getJSON(`/api/kpi-series?region=${STATE.region}&kpi=revenue`),
     getJSON("/api/hypotheses"),
     getJSON("/api/action-recommendation"),
@@ -393,6 +421,7 @@ async function init() {
     getJSON("/api/adversarial-challenges"),
     getJSON("/api/priorities"),
     getJSON("/api/contradictions"),
+    getJSON("/api/calibration-demo"),
   ]);
 
   document.getElementById("kpiValue").textContent = fmtPct(kpi.business_impact_pct);
@@ -431,6 +460,7 @@ async function init() {
   renderAdversarial(adversarial);
   renderPriorities(priorities);
   renderContradiction(contradictions);
+  renderCalibration(calibration);
 
   await renderBrief(STATE.role);
 

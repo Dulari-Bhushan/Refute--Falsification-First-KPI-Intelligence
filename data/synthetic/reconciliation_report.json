@@ -51,6 +51,20 @@
     "verdict": "SOURCES_DIVERGE",
     "explanation": "Systematic ~2.0% gap, consistent across every region-month (not random noise). Documented cause in the KPI contract: 'net of a 2% returns/discount allowance not applied in pos_transactions.gross_revenue'. Treat pos_transactions.gross_revenue as the analysis series (it is the declared system-of-record for the `revenue` KPI); finance_gl_extract is kept as a reconciliation check, not swapped in silently."
   },
+  "rep_attribution_bounds_claim": {
+    "claim": "rep-attributed revenue never exceeds total region revenue for the same region-month (a rep's book is a subset of the region it's in)",
+    "refutes_if": {
+      "condition": "attribution_ratio > 1.0 for any region-month",
+      "rationale": "Rep-attributed revenue is defined as a portion of total region revenue -- a ratio above 100% means a join or aggregation step double-counted something, not that a rep genuinely out-earned their entire region."
+    },
+    "observed": {
+      "max_attribution_ratio_pct": 13.0,
+      "n_region_months_compared": 27,
+      "worst_region_month": "East 2025-09"
+    },
+    "verdict": "CONSTRAINT_HOLDS",
+    "explanation": "Attribution ratio stays within bounds everywhere (max 13.0% of region revenue, in East 2025-09) -- no double-counting detected across 27 region-months checked."
+  },
   "reconciled_panel_grain": "region x week",
   "reconciled_kpis": [
     "revenue",
