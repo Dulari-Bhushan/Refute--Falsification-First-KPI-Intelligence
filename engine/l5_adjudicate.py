@@ -421,6 +421,8 @@ def evaluate_dose_response_test(predicate_raw: dict, regions: tuple[str, ...] = 
     strata: list[str] = []
     dose_hashes: list[str] = []
     revenue_hashes: list[str] = []
+    dose_sqls: list[str] = []
+    revenue_sqls: list[str] = []
 
     for region in regions:
         compiled = compile_dose_response_queries(region, predicate.treatment.in_, pre_lo, post_hi)
@@ -428,6 +430,8 @@ def evaluate_dose_response_test(predicate_raw: dict, regions: tuple[str, ...] = 
         revenue_df = pd.read_sql_query(compiled["revenue_sql"], conn, params=compiled["revenue_params"])
         dose_hashes.append(compiled["dose_sql_hash"])
         revenue_hashes.append(compiled["revenue_sql_hash"])
+        dose_sqls.append(f"-- {region}\n{compiled['dose_sql']}\n-- params: {compiled['dose_params']}")
+        revenue_sqls.append(f"-- {region}\n{compiled['revenue_sql']}\n-- params: {compiled['revenue_params']}")
 
         rev_pre = revenue_df[revenue_df.period.between(pre_lo, pre_hi)]["value"].mean()
         rev_post = revenue_df[revenue_df.period.between(post_lo, post_hi)]["value"].mean()
@@ -457,6 +461,8 @@ def evaluate_dose_response_test(predicate_raw: dict, regions: tuple[str, ...] = 
         did_pvalue_raw=None,
         treatment_sql_hash=",".join(dose_hashes),
         control_sql_hash=",".join(revenue_hashes),
+        treatment_sql="\n\n".join(dose_sqls),
+        control_sql="\n\n".join(revenue_sqls),
     )
 
     if n < 6:

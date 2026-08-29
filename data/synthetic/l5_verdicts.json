@@ -141,7 +141,7 @@
     ],
     "treatment_sql_hash": "9826e27054b2526c,1964ad9b7acd493e,20ecb697a712bf9f",
     "control_sql_hash": "11f3ef1d40af6650,ba8390c483df9ef9,1cacf7e8bd076004",
-    "treatment_sql": null,
-    "control_sql": null
+    "treatment_sql": "-- West\nSELECT channel AS channel, week AS period, SUM(spend_usd) AS value FROM marketing_spend WHERE region = ? AND channel IN (?,?,?,?) AND week BETWEEN ? AND ? GROUP BY channel, week ORDER BY channel, week\n-- params: ['West', 'Search', 'Social', 'Display', 'Email', 28, 34]\n\n-- East\nSELECT channel AS channel, week AS period, SUM(spend_usd) AS value FROM marketing_spend WHERE region = ? AND channel IN (?,?,?,?) AND week BETWEEN ? AND ? GROUP BY channel, week ORDER BY channel, week\n-- params: ['East', 'Search', 'Social', 'Display', 'Email', 28, 34]\n\n-- Central\nSELECT channel AS channel, week AS period, SUM(spend_usd) AS value FROM marketing_spend WHERE region = ? AND channel IN (?,?,?,?) AND week BETWEEN ? AND ? GROUP BY channel, week ORDER BY channel, week\n-- params: ['Central', 'Search', 'Social', 'Display', 'Email', 28, 34]",
+    "control_sql": "-- West\nSELECT week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND week BETWEEN ? AND ? GROUP BY week ORDER BY week\n-- params: ['West', 28, 34]\n\n-- East\nSELECT week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND week BETWEEN ? AND ? GROUP BY week ORDER BY week\n-- params: ['East', 28, 34]\n\n-- Central\nSELECT week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND week BETWEEN ? AND ? GROUP BY week ORDER BY week\n-- params: ['Central', 28, 34]"
   }
 ]
