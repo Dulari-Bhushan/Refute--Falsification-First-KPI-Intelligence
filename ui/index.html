@@ -128,6 +128,25 @@
     <div id="deliveryLogContent" class="loading">Loading&hellip;</div>
   </div>
 
+  <div class="panel">
+    <h2>Knowledge Graph</h2>
+    <p class="subtext">A real, queryable structure over the semantic contract's own declared relationships (KPI&rarr;source, KPI&rarr;domain, role&rarr;domain, dimension&rarr;table) plus this run's actual verdicts &mdash; not new facts, a structure over facts that already existed as flat YAML.</p>
+    <div id="graphDiagram" class="loading">Loading&hellip;</div>
+    <div class="kg-explore" style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select id="kgNodeSelect" style="flex:1;min-width:200px"></select>
+      <button class="action-btn" id="kgRelatedBtn" type="button">Show connections</button>
+      <button class="action-btn" id="kgBlastBtn" type="button">Blast radius (2 hops)</button>
+    </div>
+    <div id="kgQueryResult" style="margin-top:10px"></div>
+    <div id="kgSharedMechanism" style="margin-top:14px"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Proactive Alerts &mdash; <span style="color:var(--inconclusive)">Simulated Delivery</span></h2>
+    <p class="subtext">Detects which (KPI, region) movements newly cleared L1's materiality gate THIS run vs. the prior one, and routes each to whichever roles have that KPI's domain in scope &mdash; the same domain data <code>check_domain_entitlement</code> enforces, not a separate routing table. No real push is ever sent.</p>
+    <div id="alertsContent" class="loading">Loading&hellip;</div>
+  </div>
+
 </main>
 
 <script src="app.js"></script>

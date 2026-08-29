@@ -496,6 +496,164 @@ async function renderDeliveryLog() {
   el.innerHTML = `<table class="evidence-table"><thead><tr><th>Role</th><th>Persona</th><th>Channel</th><th>Urgency</th><th>Message preview</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+// ---------------------------------------------------------------- knowledge graph
+const KG_ROW_ORDER = ["domain", "kpi", "source", "dimension", "role", "channel", "hypothesis", "verdict"];
+const KG_TYPE_COLOR = { domain: "var(--accent)", kpi: "var(--text)", source: "var(--text-dim)", dimension: "var(--text-faint)", role: "var(--accent)", channel: "var(--text-dim)", verdict: "var(--text)" };
+
+function kgVerdictColor(v) {
+  return v === "KILLED" ? "var(--killed)" : v === "SURVIVED" ? "var(--survived)" : v === "INCONCLUSIVE" ? "var(--inconclusive)" : "var(--text-dim)";
+}
+
+function kgNodeColor(node) {
+  if (node.type === "hypothesis") return kgVerdictColor(node.verdict);
+  if (node.type === "verdict") return kgVerdictColor(node.id.split(":")[1]);
+  return KG_TYPE_COLOR[node.type] || "var(--text)";
+}
+
+let KG_STATE = { nodes: {}, positions: {} };
+
+function renderKnowledgeGraphDiagram(graph) {
+  const el = document.getElementById("graphDiagram");
+  const byType = {};
+  graph.nodes.forEach((n) => { (byType[n.type] = byType[n.type] || []).push(n); });
+
+  const rowH = 74;
+  const width = 1080;
+  const positions = {};
+  const rowsPresent = KG_ROW_ORDER.filter((t) => byType[t]);
+  rowsPresent.forEach((type, rowIdx) => {
+    const nodes = byType[type];
+    const y = 30 + rowIdx * rowH;
+    nodes.forEach((n, i) => {
+      const x = (width / (nodes.length + 1)) * (i + 1);
+      positions[n.id] = { x, y, node: n };
+    });
+  });
+  KG_STATE = { nodes: Object.fromEntries(graph.nodes.map((n) => [n.id, n])), positions };
+
+  const height = 30 + rowsPresent.length * rowH;
+  const edgeLines = graph.edges
+    .map((e) => {
+      const s = positions[e.source], t = positions[e.target];
+      if (!s || !t) return "";
+      return `<line x1="${s.x}" y1="${s.y}" x2="${t.x}" y2="${t.y}" stroke="var(--border)" stroke-width="1" />`;
+    })
+    .join("");
+  const nodeShapes = Object.values(positions)
+    .map(({ x, y, node }) => {
+      const color = kgNodeColor(node);
+      const label = node.label.length > 16 ? node.label.slice(0, 15) + "…" : node.label;
+      return `<g>
+        <circle cx="${x}" cy="${y}" r="5" fill="${color}" />
+        <text x="${x}" y="${y - 10}" text-anchor="middle" font-size="9.5" fill="var(--text-dim)" font-family="var(--mono)">${label}</text>
+      </g>`;
+    })
+    .join("");
+  const rowLabels = rowsPresent
+    .map((type, rowIdx) => `<text x="4" y="${30 + rowIdx * rowH + 3}" font-size="9" fill="var(--text-faint)" text-transform="uppercase">${type}</text>`)
+    .join("");
+
+  el.innerHTML = `
+    <div style="overflow-x:auto">
+      <svg viewBox="0 0 ${width} ${height}" style="width:100%;min-width:640px;height:${height}px">
+        ${edgeLines}
+        ${nodeShapes}
+        ${rowLabels}
+      </svg>
+    </div>
+    <p class="subtext" style="margin-top:6px">${graph.nodes.length} nodes, ${graph.edges.length} edges &mdash; rows: ${rowsPresent.join(", ")}. Hover the dropdown below to query any node's real connections.</p>
+  `;
+
+  const select = document.getElementById("kgNodeSelect");
+  const byTypeSorted = rowsPresent.map((type) => ({ type, nodes: byType[type].slice().sort((a, b) => a.label.localeCompare(b.label)) }));
+  select.innerHTML = byTypeSorted
+    .map((group) => `<optgroup label="${group.type}">${group.nodes.map((n) => `<option value="${n.id}">${n.label}</option>`).join("")}</optgroup>`)
+    .join("");
+}
+
+function renderKgQueryResult(title, rows, columns) {
+  const el = document.getElementById("kgQueryResult");
+  if (!rows || rows.length === 0) {
+    el.innerHTML = `<p class="subtext"><strong>${title}:</strong> no connections found.</p>`;
+    return;
+  }
+  const head = columns.map((c) => `<th>${c.label}</th>`).join("");
+  const body = rows.map((r) => `<tr>${columns.map((c) => `<td>${c.render ? c.render(r) : r[c.key]}</td>`).join("")}</tr>`).join("");
+  el.innerHTML = `<p class="subtext" style="margin-bottom:6px"><strong>${title}</strong></p><table class="evidence-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+async function renderSharedMechanism() {
+  const el = document.getElementById("kgSharedMechanism");
+  const survived = (STATE.hypotheses || []).find((h) => h.verdict === "SURVIVED");
+  if (!survived) {
+    el.innerHTML = "";
+    return;
+  }
+  const data = await getJSON(`/api/knowledge-graph/shared-mechanism?hypothesis_id=${survived.hypothesis_id}`);
+  const rows = data.shared_mechanism || [];
+  const body = rows
+    .map((r) => `<tr><td>${r.label}</td><td style="color:${kgVerdictColor(r.verdict)}">${r.verdict}</td><td>${r.test_archetype}</td><td>${r.same_archetype ? "yes" : "no"}</td><td>${r.shared_dimensions.join(", ") || "&mdash;"}</td></tr>`)
+    .join("");
+  el.innerHTML = `<p class="subtext" style="margin-bottom:6px"><strong>What shares a mechanism-shape with the currently-surviving hypothesis (${survived.hypothesis_id})?</strong> A graph-native question the flat verdict list can't answer without a manual scan.</p>
+    <table class="evidence-table"><thead><tr><th>Hypothesis</th><th>Verdict</th><th>Archetype</th><th>Same archetype?</th><th>Shared dimensions</th></tr></thead><tbody>${body || '<tr><td colspan="5" class="subtext">None share a dimension or archetype.</td></tr>'}</tbody></table>`;
+}
+
+async function initKnowledgeGraph() {
+  const graph = await getJSON("/api/knowledge-graph");
+  renderKnowledgeGraphDiagram(graph);
+  await renderSharedMechanism();
+
+  document.getElementById("kgRelatedBtn").addEventListener("click", async () => {
+    const nodeId = document.getElementById("kgNodeSelect").value;
+    const data = await getJSON(`/api/knowledge-graph/related?node_id=${encodeURIComponent(nodeId)}`);
+    renderKgQueryResult(`Direct connections of ${KG_STATE.nodes[nodeId]?.label || nodeId}`, data.related, [
+      { key: "relation", label: "Relation" },
+      { key: "direction", label: "Direction" },
+      { key: "label", label: "Node" },
+      { key: "type", label: "Type" },
+    ]);
+  });
+
+  document.getElementById("kgBlastBtn").addEventListener("click", async () => {
+    const nodeId = document.getElementById("kgNodeSelect").value;
+    const data = await getJSON(`/api/knowledge-graph/blast-radius?node_id=${encodeURIComponent(nodeId)}&max_depth=2`);
+    renderKgQueryResult(`Blast radius of ${KG_STATE.nodes[nodeId]?.label || nodeId} (up to 2 hops -- what depends on it)`, data.blast_radius, [
+      { key: "hops", label: "Hops" },
+      { key: "via_relation", label: "Via" },
+      { key: "label", label: "Node" },
+      { key: "type", label: "Type" },
+    ]);
+  });
+}
+
+// ---------------------------------------------------------------- proactive alerts
+function renderAlerts(data) {
+  const el = document.getElementById("alertsContent");
+  const urgencyColor = (u) => (u === "urgent_push" ? "var(--killed)" : u === "routine_push" ? "var(--inconclusive)" : "var(--text-dim)");
+  const recentRows = (data.recent || [])
+    .map((a) => `<tr><td>${a.kpi}</td><td>${a.region}</td><td>${a.role}</td><td>${a.channel}</td><td style="color:${urgencyColor(a.urgency)}">${a.urgency}</td><td class="subtext">${a.message}</td></tr>`)
+    .join("");
+  const recentTable = recentRows
+    ? `<table class="evidence-table"><thead><tr><th>KPI</th><th>Region</th><th>Role</th><th>Channel</th><th>Urgency</th><th>Message</th></tr></thead><tbody>${recentRows}</tbody></table>`
+    : `<p class="subtext">0 alerts this run &mdash; nothing currently gated is new relative to the prior run (this demo's data is deterministic, so that's the honest, expected result after the first run, not a missed detection).</p>`;
+
+  const demo = data.demo;
+  el.innerHTML = `
+    ${recentTable}
+    <p class="subtext" style="margin-top:14px"><strong>${demo.label}</strong> &mdash; proves the new-vs-known detection logic itself is correct:</p>
+    <table class="evidence-table">
+      <thead><tr><th>Prior run gated</th><th>Current run gated</th><th>Correctly new</th><th>Correctly NOT new</th><th>Detector correct?</th></tr></thead>
+      <tbody><tr>
+        <td class="subtext">${demo.prior_run_gated.join(", ")}</td>
+        <td class="subtext">${demo.current_run_gated.join(", ")}</td>
+        <td style="color:var(--survived)">${demo.correctly_identified_as_new.join(", ")}</td>
+        <td class="subtext">${demo.correctly_identified_as_not_new.join(", ")}</td>
+        <td style="color:${demo.detector_correct ? "var(--survived)" : "var(--killed)"}">${demo.detector_correct ? "yes" : "no"}</td>
+      </tr></tbody>
+    </table>
+  `;
+}
+
 // ---------------------------------------------------------------- adversarial challenge
 function renderAdversarial(data) {
   const panel = document.getElementById("adversarialPanel");
@@ -521,7 +679,7 @@ function renderAdversarial(data) {
 
 // ---------------------------------------------------------------- init
 async function init() {
-  const [kpi, hypData, action, evidence, telemetry, methods, counterfactual, adversarial, priorities, contradictions, calibration, drift] = await Promise.all([
+  const [kpi, hypData, action, evidence, telemetry, methods, counterfactual, adversarial, priorities, contradictions, calibration, drift, alerts] = await Promise.all([
     getJSON(`/api/kpi-series?region=${STATE.region}&kpi=revenue`),
     getJSON("/api/hypotheses"),
     getJSON("/api/action-recommendation"),
@@ -534,6 +692,7 @@ async function init() {
     getJSON("/api/contradictions"),
     getJSON("/api/calibration-demo"),
     getJSON("/api/drift"),
+    getJSON("/api/alerts"),
   ]);
 
   document.getElementById("kpiValue").textContent = fmtPct(kpi.business_impact_pct);
@@ -577,6 +736,8 @@ async function init() {
   renderDomainCheck();
   renderEntitlementLog();
   renderDeliveryLog();
+  initKnowledgeGraph();
+  renderAlerts(alerts);
 
   await renderBrief(STATE.role);
 

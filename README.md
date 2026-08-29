@@ -39,6 +39,8 @@ uv run uvicorn api.main:app --reload        # then open http://127.0.0.1:8000 --
 | Methods registry | [engine/methods_registry.py](engine/methods_registry.py) | Single source of truth for which method category (deterministic logic / SQL / business rules / statistics / traditional ML / causal inference / LLM) each stage uses and why, with a structural check that no LLM stage is ever marked a quantitative source of truth — imported directly by the UI and the Engineer persona view, not restated |
 | Scalability benchmark | [tests/scalability_test.py](tests/scalability_test.py) | Times each layer's actual bottleneck operation at up to 65-225x the demo dataset's scale, plus an **integrated** real-SQLite → real compiler → real DiD path (not an isolated-kernel proxy) — see §6, objective 8, for results |
 | Drift monitoring | [engine/drift_monitor.py](engine/drift_monitor.py) | Population Stability Index (Siddiqi 2006) comparing each run's L1 changepoint posteriors and L5 DiD effect sizes/MDEs against pooled prior-run history (`run_snapshots` ledger table), honestly reporting `insufficient_history` below 5 prior runs rather than a hollow number — same pattern as calibration's honesty gate. `run_drift_demo()` proves the PSI mechanism itself is correct against a labeled simulated run history |
+| Knowledge graph | [engine/knowledge_graph.py](engine/knowledge_graph.py) | A real, dependency-free directed graph built from the semantic contract + this run's actual verdicts (~35 nodes, ~55 edges) — `related()`, `blast_radius()`, `shared_mechanism()` answer questions the flat YAML couldn't, rendered as an SVG diagram plus an interactive explorer in the UI |
+| Proactive alerting | [engine/proactive_monitor.py](engine/proactive_monitor.py) | Detects which (KPI, region) movements newly cleared L1's materiality gate vs. the immediately prior run, routes each to every role whose `domain_scope` covers that KPI's domain (reusing the same data `check_domain_entitlement` enforces), logs an honestly-SIMULATED alert per role — no real push ever sent, no always-on scheduler bundled (meant to be invoked by a real cron/Task Scheduler entry) |
 
 ### Gap audit against the brief's named real-world complexities
 
@@ -51,11 +53,13 @@ Explore" (anomaly detection/causal inference/business rules; governed semantics/
 LLM-assisted orchestration/narrative synthesis; proactive alerts/conversational analysis/dashboards;
 confidence scoring/evidence citation/abstention; the action-recommendation template; feedback/
 learning loops; platform-native vs. custom) — same read-the-actual-source discipline as GAPS.md.
-Most areas are genuinely covered; a few (knowledge graph structure, a chat interface, proactive
-scheduled alerts, real forecasting, LLM-driven orchestration) are deliberately not, with reasoning
-for each on whether adding them would help or actively contradict REFUTE's falsification-first
-thesis. It also lists what REFUTE has that isn't on that menu at all — the actual differentiators
-against teams working from the same list.
+Most areas are genuinely covered, including a real knowledge-graph layer and proactive/scheduled
+alerting (both added after the initial audit flagged them as cheap and low-risk — see
+`engine/knowledge_graph.py` and `engine/proactive_monitor.py` above). A chat interface, real
+forecasting, and LLM-driven orchestration remain deliberately not built, with reasoning for each on
+whether adding them would help or actively contradict REFUTE's falsification-first thesis. It also
+lists what REFUTE has that isn't on that menu at all — the actual differentiators against teams
+working from the same list.
 
 ### The canonical worked example, actually running
 

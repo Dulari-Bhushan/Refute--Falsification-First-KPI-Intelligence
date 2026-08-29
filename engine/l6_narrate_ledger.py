@@ -124,6 +124,31 @@ CREATE TABLE IF NOT EXISTS entitlement_checks (
     reason TEXT,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS gated_movements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    kpi TEXT NOT NULL,
+    region TEXT NOT NULL,
+    week INTEGER,
+    business_impact_pct REAL,
+    confidence REAL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    kpi TEXT NOT NULL,
+    region TEXT NOT NULL,
+    week INTEGER,
+    business_impact_pct REAL,
+    confidence REAL,
+    role TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    urgency TEXT NOT NULL,
+    message TEXT NOT NULL,
+    simulated INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS delivery_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id TEXT,
@@ -781,6 +806,19 @@ def main() -> None:
     print("\n=== Delivery-channel routing (SIMULATED -- no real Slack/email API called) ===")
     for d in deliveries:
         print(f"  {d['role']:<20} -> {d['channel']:<15} ({d['urgency']})  {d['reason']}")
+
+    # --- proactive alerting (SOLUTIONING.md item 4's "proactive" half) ---
+    from engine.proactive_monitor import detect_new_alerts, record_gated_movements
+
+    record_gated_movements(ledger, run_id, l1_results)
+    new_alerts = detect_new_alerts(ledger, run_id, l1_results, contract)
+    print("\n=== Proactive alerting: newly-gated movements this run vs. the prior run ===")
+    if not new_alerts:
+        print("  0 new alerts -- nothing currently gated is new relative to the prior run (honest, not a missed detection: this demo's data is deterministic).")
+    for a in new_alerts:
+        print(f"  {a['kpi']} ({a['region']}): {a['message']}")
+        routed = ", ".join(a["routed_to_roles"]) or "(no role has this KPI's domain in scope)"
+        print(f"    routed to: {routed}  urgency={a['urgency']}")
 
     # --- LLM vs. non-LLM breakdown -- literal telemetry, not a design claim ---
     rows = ledger.execute("SELECT stage, is_llm_call, latency_ms, estimated_cost_usd FROM telemetry WHERE run_id=?", (run_id,)).fetchall()

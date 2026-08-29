@@ -36,6 +36,8 @@ from engine.l6_narrate_ledger import build_action_recommendation, build_counterf
 from engine.methods_registry import REGISTRY, assert_llm_not_quantitative_source
 from engine.calibration import run_calibration_demo
 from engine.drift_monitor import assess_drift, run_drift_demo
+from engine.knowledge_graph import load_graph
+from engine.proactive_monitor import run_alert_demo
 
 ROOT = Path(__file__).parent.parent
 DATA_DIR = ROOT / "data" / "synthetic"
@@ -347,6 +349,58 @@ def drift_endpoint():
     real = assess_drift(conn, latest["run_id"]) if latest is not None else {"status": "insufficient_history", "n_baseline_runs": 0, "runs_needed": 5, "explanation": "No run snapshots recorded yet -- run the pipeline first."}
     conn.close()
     return {"real": real, "demo": demo}
+
+
+@app.get("/api/knowledge-graph")
+def knowledge_graph_endpoint():
+    """SOLUTIONING.md item 2: a real, queryable structure over the
+    semantic contract's own declared relationships (KPI->source, KPI->
+    domain, role->domain, dimension->table) plus this run's actual
+    verdicts (hypothesis->dimension, hypothesis->verdict) -- rebuilt fresh
+    from the live contract + l5_verdicts.json every request, same
+    read-the-live-source discipline as every other endpoint here."""
+    return load_graph().export()
+
+
+@app.get("/api/knowledge-graph/related")
+def knowledge_graph_related(node_id: str):
+    """'What else touches this node' -- direct neighbors, either
+    direction, with the relation connecting them."""
+    return {"node_id": node_id, "related": load_graph().related(node_id)}
+
+
+@app.get("/api/knowledge-graph/blast-radius")
+def knowledge_graph_blast_radius(node_id: str, max_depth: int = 3):
+    """'What depends on this, transitively' -- most meaningful from a
+    source node (what breaks if pos_transactions goes stale or wrong?),
+    but works from any node."""
+    return {"node_id": node_id, "max_depth": max_depth, "blast_radius": load_graph().blast_radius(node_id, max_depth)}
+
+
+@app.get("/api/knowledge-graph/shared-mechanism")
+def knowledge_graph_shared_mechanism(hypothesis_id: str):
+    """'What else looks like this hypothesis, structurally' -- other
+    hypotheses sharing a tested dimension or the same test_archetype."""
+    return {"hypothesis_id": hypothesis_id, "shared_mechanism": load_graph().shared_mechanism(f"hyp:{hypothesis_id}")}
+
+
+@app.get("/api/alerts")
+def alerts_endpoint(limit: int = 20):
+    """SOLUTIONING.md item 4's proactive-alerting half. `recent` is the
+    real, persisted alert log (engine.proactive_monitor.detect_new_alerts,
+    routed through the same domain_scope data check_domain_entitlement
+    enforces) -- empty until a pipeline run has recorded at least one gated
+    movement twice. `demo` proves the new-vs-known detection logic is
+    correct against a clearly labeled simulated two-run history, same
+    honesty pattern as /api/drift."""
+    ledger_path = DATA_DIR / "ledger.sqlite"
+    recent = []
+    if ledger_path.exists():
+        conn = sqlite3.connect(ledger_path)
+        conn.row_factory = sqlite3.Row
+        recent = [dict(r) for r in conn.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
+        conn.close()
+    return {"recent": recent, "demo": run_alert_demo()}
 
 
 @app.get("/api/adversarial-challenges")
