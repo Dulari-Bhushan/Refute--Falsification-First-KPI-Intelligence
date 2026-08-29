@@ -695,9 +695,10 @@ def main() -> None:
 
     with telemetry_span(ledger, run_id, "L5_adjudicate", is_llm_call=False):
         outcomes = adjudicate_all()
-    # h_billing_complaints's precedence test (see l5_adjudicate.main) needs
-    # L1/L3 output on disk; reuse that same logic here so the ledger gets
-    # the full five-hypothesis picture in one run.
+    # h_billing_complaints's and h_weather_disruption's precedence tests
+    # (see l5_adjudicate.main) need L1/L3 output on disk; reuse that same
+    # logic here so the ledger gets the full seven-hypothesis picture in
+    # one run.
     l1_path, l3_path = DATA_DIR / "l1_signal_results.json", DATA_DIR / "l3_topic_candidates.json"
     l1_results = json.loads(l1_path.read_text()) if l1_path.exists() else []
     if l1_path.exists() and l3_path.exists():
@@ -713,6 +714,21 @@ def main() -> None:
                         "h_billing_complaints",
                         topic_tau=billing_cluster["changepoint_week"],
                         topic_confidence=billing_cluster["changepoint_confidence"],
+                        kpi_tau=west_revenue["changepoint_period_estimate"],
+                        kpi_confidence=west_revenue["changepoint_posterior_recent"],
+                    )
+                )
+
+        # h_weather_disruption: the "external events" driver class (GAPS.md
+        # item 1) -- same defense-in-depth reasoning as billing_complaints.
+        weather_cluster = next((c for c in l3_candidates if "storm" in " ".join(c["top_terms"]).lower() or "weather" in " ".join(c["top_terms"]).lower()), None)
+        if weather_cluster is not None:
+            with telemetry_span(ledger, run_id, "L5_precedence_test_weather", is_llm_call=False):
+                outcomes.append(
+                    evaluate_precedence_test(
+                        "h_weather_disruption",
+                        topic_tau=weather_cluster["changepoint_week"],
+                        topic_confidence=weather_cluster["changepoint_confidence"],
                         kpi_tau=west_revenue["changepoint_period_estimate"],
                         kpi_confidence=west_revenue["changepoint_posterior_recent"],
                     )

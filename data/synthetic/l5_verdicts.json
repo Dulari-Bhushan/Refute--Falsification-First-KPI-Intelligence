@@ -120,6 +120,30 @@
     "control_sql": null
   },
   {
+    "hypothesis_id": "h_weather_disruption",
+    "test_archetype": "precedence",
+    "dim": "ticket_topic",
+    "n_treatment_units": 1,
+    "n_control_units": 0,
+    "did_effect": null,
+    "did_se": null,
+    "did_pvalue_raw": null,
+    "did_pvalue_bh": null,
+    "parallel_trends_pvalue": null,
+    "parallel_trends_ok": null,
+    "mde": null,
+    "plausible_effect": null,
+    "verdict": "KILLED",
+    "reason": "Candidate cause's own changepoint (week 34) comes AFTER the KPI's onset (week 32) -- this is a downstream symptom, not a cause. refutes_if condition met: effect precedes cause.",
+    "notes": [
+      "topic_changepoint_week=34 (confidence=0.86); kpi_changepoint_week=32 (confidence=0.79)"
+    ],
+    "treatment_sql_hash": null,
+    "control_sql_hash": null,
+    "treatment_sql": null,
+    "control_sql": null
+  },
+  {
     "hypothesis_id": "h_marketing_spend_cut",
     "test_archetype": "dose_response",
     "dim": "channel",

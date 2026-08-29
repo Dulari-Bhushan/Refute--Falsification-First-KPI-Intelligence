@@ -7,7 +7,7 @@
       "customer",
       "customer says",
       "says",
-      "customer confused",
+      "rep",
       "confused account"
     ],
     "representative_text": "Customer threatening to churn over lack of account management responsiveness.",
@@ -23,57 +23,105 @@
     "reason": "Has its own changepoint at week 33, but that's AFTER the KPI's own onset (week 32) -- this looks like a downstream symptom of the KPI movement, not a cause of it. Structurally excluded at generation time, per the precedence requirement (this is exactly the naive-RAG trap: a topic that spikes *because* the KPI moved would otherwise get treated as if it explained the movement)."
   },
   {
-    "cluster_id": 1,
+    "cluster_id": 2,
+    "n_tickets": 14,
+    "top_terms": [
+      "west",
+      "delivery",
+      "carrier",
+      "region",
+      "west_dc",
+      "west region"
+    ],
+    "representative_text": "Order shipped from WEST_DC is running 4 days late, no tracking update.",
+    "weekly_counts": {
+      "13": 1,
+      "31": 10,
+      "33": 1,
+      "34": 2
+    },
+    "changepoint_week": 31,
+    "changepoint_confidence": 0.8591,
+    "precedes_kpi": true,
+    "kpi_onset_week": 32,
+    "became_candidate": true,
+    "reason": "Independent changepoint at week 31 (confidence=0.86), which precedes the KPI's onset (week 32) -- proposed as a candidate hypothesis."
+  },
+  {
+    "cluster_id": 3,
+    "n_tickets": 6,
+    "top_terms": [
+      "storm",
+      "store",
+      "west",
+      "storm warning",
+      "warning",
+      "power"
+    ],
+    "representative_text": "West region weather advisory kept store traffic down this week.",
+    "weekly_counts": {
+      "34": 4,
+      "35": 2
+    },
+    "changepoint_week": 34,
+    "changepoint_confidence": 0.8613,
+    "precedes_kpi": false,
+    "kpi_onset_week": 32,
+    "became_candidate": false,
+    "reason": "Has its own changepoint at week 34, but that's AFTER the KPI's own onset (week 32) -- this looks like a downstream symptom of the KPI movement, not a cause of it. Structurally excluded at generation time, per the precedence requirement (this is exactly the naive-RAG trap: a topic that spikes *because* the KPI moved would otherwise get treated as if it explained the movement)."
+  },
+  {
+    "cluster_id": 4,
     "n_tickets": 6,
     "top_terms": [
       "accessories",
       "pricing",
-      "asked",
       "customer asked",
+      "asked",
       "customer",
-      "asked bulk"
+      "bulk order"
     ],
     "representative_text": "Rep note: a few accessories customers pushed back on new pricing.",
     "weekly_counts": {
-      "11": 1,
-      "22": 1,
+      "12": 1,
+      "25": 1,
       "32": 4
     },
     "changepoint_week": 32,
-    "changepoint_confidence": 0.828,
+    "changepoint_confidence": 0.8216,
     "precedes_kpi": true,
     "kpi_onset_week": 32,
     "became_candidate": true,
-    "reason": "Independent changepoint at week 32 (confidence=0.83), which precedes the KPI's onset (week 32) -- proposed as a candidate hypothesis."
+    "reason": "Independent changepoint at week 32 (confidence=0.82), which precedes the KPI's onset (week 32) -- proposed as a candidate hypothesis."
   },
   {
-    "cluster_id": 3,
+    "cluster_id": 5,
     "n_tickets": 5,
     "top_terms": [
       "category",
       "packaging",
       "review",
-      "home category",
       "home",
+      "home category",
       "positive"
     ],
     "representative_text": "Feedback: customer loves the Outdoor category's new arrivals.",
     "weekly_counts": {
-      "2": 1,
+      "1": 1,
       "8": 1,
-      "21": 1,
-      "24": 1,
-      "40": 1
+      "19": 1,
+      "26": 1,
+      "37": 1
     },
-    "changepoint_week": 40,
-    "changepoint_confidence": 0.7908,
-    "precedes_kpi": false,
+    "changepoint_week": 19,
+    "changepoint_confidence": 0.7552,
+    "precedes_kpi": true,
     "kpi_onset_week": 32,
-    "became_candidate": false,
-    "reason": "Has its own changepoint at week 40, but that's AFTER the KPI's own onset (week 32) -- this looks like a downstream symptom of the KPI movement, not a cause of it. Structurally excluded at generation time, per the precedence requirement (this is exactly the naive-RAG trap: a topic that spikes *because* the KPI moved would otherwise get treated as if it explained the movement)."
+    "became_candidate": true,
+    "reason": "Independent changepoint at week 19 (confidence=0.76), which precedes the KPI's onset (week 32) -- proposed as a candidate hypothesis."
   },
   {
-    "cluster_id": 5,
+    "cluster_id": 6,
     "n_tickets": 8,
     "top_terms": [
       "competitor",
@@ -83,7 +131,7 @@
       "competitor new",
       "competitor product"
     ],
-    "representative_text": "Marketing flagged competitor ad spend spike coinciding with their new launch.",
+    "representative_text": "Customer churned to a competitor citing their new product launch.",
     "weekly_counts": {
       "32": 8
     },
@@ -93,29 +141,5 @@
     "kpi_onset_week": 32,
     "became_candidate": true,
     "reason": "Independent changepoint at week 32 (confidence=0.86), which precedes the KPI's onset (week 32) -- proposed as a candidate hypothesis."
-  },
-  {
-    "cluster_id": 6,
-    "n_tickets": 12,
-    "top_terms": [
-      "west",
-      "carrier",
-      "west_dc",
-      "delivery",
-      "region",
-      "week"
-    ],
-    "representative_text": "Order shipped from WEST_DC is running 4 days late, no tracking update.",
-    "weekly_counts": {
-      "16": 1,
-      "31": 10,
-      "33": 1
-    },
-    "changepoint_week": 31,
-    "changepoint_confidence": 0.8593,
-    "precedes_kpi": true,
-    "kpi_onset_week": 32,
-    "became_candidate": true,
-    "reason": "Independent changepoint at week 31 (confidence=0.86), which precedes the KPI's onset (week 32) -- proposed as a candidate hypothesis."
   }
 ]

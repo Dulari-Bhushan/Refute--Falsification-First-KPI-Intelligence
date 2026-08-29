@@ -1,22 +1,22 @@
 ticket_id,created_at,region,topic_seed,text
-T0031,2025-01-16,Central,baseline_noise,Product quality praised in a 5-star review this week.
-T0032,2025-01-28,Central,baseline_noise,Customer asked a general question about return policy.
-T0034,2025-02-17,West,baseline_noise,Routine inquiry about loyalty points balance.
-T0033,2025-02-18,Central,baseline_noise,Checkout UX feedback: customer liked the new one-click flow.
-T0035,2025-02-24,West,baseline_noise,Customer complimented packaging on a recent Home category order.
-T0036,2025-03-10,West,baseline_noise,General question about warranty coverage on Electronics purchase.
-T0037,2025-03-17,East,baseline_noise,Customer asked about upcoming holiday shipping cutoffs.
-T0039,2025-04-14,West,baseline_noise,"Routine product sizing question, Apparel category."
-T0038,2025-04-23,West,baseline_noise,Positive feedback on delivery speed in the Central region.
-T0040,2025-04-28,West,baseline_noise,Customer requested an invoice copy for expense reporting.
-T0041,2025-05-28,West,baseline_noise,Feedback: customer loves the Outdoor category's new arrivals.
-T0043,2025-06-02,Central,baseline_noise,Customer asked about bulk order discounts.
-T0042,2025-06-07,West,baseline_noise,General inquiry about gift card balance.
-T0044,2025-06-16,West,baseline_noise,Positive review of Home category product durability.
-T0046,2025-07-14,West,baseline_noise,Customer asked about restock timing for a popular Electronics SKU.
-T0045,2025-07-22,West,baseline_noise,Routine address-change request.
-T0047,2025-08-03,East,baseline_noise,"General satisfaction survey response, no issues raised."
+T0039,2025-01-06,East,baseline_noise,Product quality praised in a 5-star review this week.
+T0040,2025-01-22,East,baseline_noise,Customer asked a general question about return policy.
+T0041,2025-02-19,East,baseline_noise,Checkout UX feedback: customer liked the new one-click flow.
+T0043,2025-02-24,Central,baseline_noise,Customer complimented packaging on a recent Home category order.
+T0042,2025-02-26,West,baseline_noise,Routine inquiry about loyalty points balance.
+T0044,2025-03-10,East,baseline_noise,General question about warranty coverage on Electronics purchase.
+T0045,2025-03-29,Central,baseline_noise,Customer asked about upcoming holiday shipping cutoffs.
+T0046,2025-03-31,East,baseline_noise,Positive feedback on delivery speed in the Central region.
+T0047,2025-04-14,West,baseline_noise,"Routine product sizing question, Apparel category."
+T0048,2025-04-28,East,baseline_noise,Customer requested an invoice copy for expense reporting.
+T0049,2025-05-12,West,baseline_noise,Feedback: customer loves the Outdoor category's new arrivals.
+T0050,2025-05-26,West,baseline_noise,General inquiry about gift card balance.
+T0051,2025-06-28,West,baseline_noise,Customer asked about bulk order discounts.
+T0053,2025-06-30,East,baseline_noise,Routine address-change request.
+T0052,2025-07-03,West,baseline_noise,Positive review of Home category product durability.
+T0055,2025-07-28,East,baseline_noise,"General satisfaction survey response, no issues raised."
 T0001,2025-08-04,West,shipping_delay,"Order shipped from WEST_DC is running 4 days late, no tracking update."
+T0009,2025-08-04,West,shipping_delay,Ops flagged recurring WEST_DC dispatch delays this week.
 T0002,2025-08-04,West,shipping_delay,"Customer escalation: West region deliveries delayed again this week, carrier backlog cited."
 T0003,2025-08-04,West,shipping_delay,Multiple complaints about WEST_DC fulfillment center delays since last week.
 T0004,2025-08-04,West,shipping_delay,"Delivery promised in 2 days, took 6 -- carrier says West hub is backed up."
@@ -24,30 +24,38 @@ T0005,2025-08-04,West,shipping_delay,West warehouse shipping delay flagged by op
 T0006,2025-08-04,West,shipping_delay,Customer asking why West orders are slower than usual lately.
 T0007,2025-08-04,West,shipping_delay,Carrier notified us of continued congestion at the West distribution center.
 T0010,2025-08-04,West,shipping_delay,Support queue seeing a cluster of 'where is my order' tickets tied to West fulfillment.
-T0009,2025-08-04,West,shipping_delay,Ops flagged recurring WEST_DC dispatch delays this week.
+T0056,2025-08-04,Central,baseline_noise,Customer praised support responsiveness in East region.
+T0054,2025-08-05,East,baseline_noise,Customer asked about restock timing for a popular Electronics SKU.
 T0008,2025-08-09,West,shipping_delay,"Another late delivery ticket, West region, carrier delay cited again."
+T0017,2025-08-11,West,competitor_launch,Customer churned to a competitor citing their new product launch.
 T0029,2025-08-11,West,accessories_pricing,Rep note: a few accessories customers pushed back on new pricing.
-T0016,2025-08-11,West,competitor_launch,Marketing flagged competitor ad spend spike coinciding with their new launch.
-T0015,2025-08-11,West,competitor_launch,Rep call notes: competitor's launch event came up twice this week.
-T0011,2025-08-11,West,competitor_launch,Customer mentioned a rival electronics brand just launched a cheaper competing model.
 T0012,2025-08-11,West,competitor_launch,Sales rep note: prospect referenced a new competitor product announced this month.
 T0013,2025-08-11,West,competitor_launch,Social listening flagged buzz around a competitor's new electronics line.
 T0014,2025-08-11,West,competitor_launch,Customer asked if we'd price-match the newly launched competitor product.
+T0015,2025-08-11,West,competitor_launch,Rep call notes: competitor's launch event came up twice this week.
+T0016,2025-08-11,West,competitor_launch,Marketing flagged competitor ad spend spike coinciding with their new launch.
+T0011,2025-08-11,West,competitor_launch,Customer mentioned a rival electronics brand just launched a cheaper competing model.
 T0018,2025-08-11,West,competitor_launch,Support ticket: customer comparing us unfavorably to competitor's new release.
-T0017,2025-08-11,West,competitor_launch,Customer churned to a competitor citing their new product launch.
 T0030,2025-08-14,West,accessories_pricing,Accessories category pricing experiment flagged by a customer as inconsistent.
 T0027,2025-08-14,West,accessories_pricing,Customer asked about a recent price change on accessories items.
 T0028,2025-08-15,West,accessories_pricing,Small complaint about accessories pricing test being confusing at checkout.
 T0026,2025-08-18,West,billing_complaints,Customer threatening to churn over lack of account management responsiveness.
-T0025,2025-08-18,West,billing_complaints,"Repeat complaint: no account coverage, invoices going unexplained."
-T0024,2025-08-18,West,billing_complaints,Customer says service has gotten worse since their old rep stopped responding.
+T0057,2025-08-18,West,baseline_noise,"Routine question about app login issue, unrelated to orders."
 T0021,2025-08-18,West,billing_complaints,Customer confused about who their account manager even is now.
+T0024,2025-08-18,West,billing_complaints,Customer says service has gotten worse since their old rep stopped responding.
+T0025,2025-08-18,West,billing_complaints,"Repeat complaint: no account coverage, invoices going unexplained."
 T0020,2025-08-19,West,billing_complaints,Escalation: West account complaining nobody from sales has followed up since reassignment.
 T0023,2025-08-20,West,billing_complaints,"Account flagged as unmanaged, customer requesting a new point of contact."
-T0022,2025-08-24,West,billing_complaints,"Billing question went unanswered for 10 days, customer frustrated."
 T0019,2025-08-24,West,billing_complaints,Customer says their account rep hasn't responded in two weeks.
-T0048,2025-08-30,East,baseline_noise,Customer praised support responsiveness in East region.
-T0050,2025-09-01,West,baseline_noise,"Customer asked about product care instructions, Apparel category."
-T0049,2025-09-12,West,baseline_noise,"Routine question about app login issue, unrelated to orders."
-T0052,2025-09-29,West,baseline_noise,Routine question about order tracking link not loading.
-T0051,2025-10-12,Central,baseline_noise,"Feedback on packaging sustainability, generally positive."
+T0022,2025-08-24,West,billing_complaints,"Billing question went unanswered for 10 days, customer frustrated."
+T0037,2025-08-25,West,weather_disruption,Regional storm warning caused a noticeable drop in West in-store visits.
+T0035,2025-08-27,West,weather_disruption,West region weather advisory kept store traffic down this week.
+T0036,2025-08-27,West,weather_disruption,Customer mentioned the storm knocked out power and delayed their delivery.
+T0031,2025-08-28,West,weather_disruption,"Severe winter storm hit the West region this week, roads were closed for two days."
+T0038,2025-08-29,West,weather_disruption,Support ticket: customer's West-area order held up by storm-related road closures.
+T0033,2025-08-30,West,weather_disruption,Delivery delayed due to severe weather conditions across the West region.
+T0032,2025-09-01,West,weather_disruption,Customer said they couldn't get to the store because of the storm warning.
+T0034,2025-09-01,West,weather_disruption,Power outage from the storm affected several West-area customers' online orders.
+T0058,2025-09-03,Central,baseline_noise,"Customer asked about product care instructions, Apparel category."
+T0059,2025-09-15,West,baseline_noise,"Feedback on packaging sustainability, generally positive."
+T0060,2025-09-29,East,baseline_noise,Routine question about order tracking link not loading.

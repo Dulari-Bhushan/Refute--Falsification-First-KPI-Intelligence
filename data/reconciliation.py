@@ -100,6 +100,87 @@ def _freshness_row(contract: dict, source_name: str, period_covered_through: dat
     }
 
 
+def _complete_months(week1_start: date, as_of: date) -> list[str]:
+    """Same 'a monthly source only ever publishes a fully-closed month'
+    semantics as data/generate_synthetic_data.py's complete_months(),
+    reimplemented locally (params instead of module constants) so this
+    module stays decoupled from the generator -- reconciliation has to work
+    against whatever data actually landed, not assume it knows the
+    generator's internals."""
+    months = set()
+    d = week1_start
+    while d <= as_of:
+        months.add(f"{d.year:04d}-{d.month:02d}")
+        d += timedelta(days=1)
+    months = sorted(months)
+    y, m = map(int, months[-1].split("-"))
+    days_in_last_month = (date(y + (m == 12), (m % 12) + 1, 1) - timedelta(days=1)).day
+    if as_of.day < days_in_last_month:
+        months = months[:-1]
+    return months
+
+
+def compute_data_quality_scores(sources: dict[str, pd.DataFrame], contract: dict, as_of: date) -> list[dict]:
+    """GAPS.md item 2's thinner sub-point: 'data quality levels' (plural,
+    implying gradation) previously had only a binary system_of_record flag
+    per source. This adds a real, COMPUTED signal -- coverage completeness
+    against each source's OWN expected periods, respecting its cadence's
+    complete-period semantics (a monthly source correctly never reports a
+    partial trailing month -- see _complete_months -- so it isn't penalized
+    for that; only a genuine gap counts). support_tickets has no fixed
+    reporting grain to check completeness against at all; that's stated
+    plainly as n/a rather than papered over with an invented number, same
+    honesty discipline as everywhere else in this module."""
+    week1_start = date.fromisoformat(contract["analysis_calendar"]["week1_start"])
+    total_weeks = contract["analysis_calendar"]["total_weeks"]
+    regions = sorted(sources["pos_transactions"]["region"].unique())
+
+    scores = []
+
+    pos = sources["pos_transactions"]
+    expected_days = (as_of - week1_start).days + 1
+    actual_days_per_region = pos.groupby("region")["date"].apply(lambda s: s.dt.date.nunique())
+    completeness = float((actual_days_per_region / expected_days).clip(upper=1.0).mean())
+    scores.append(_quality_row("pos_transactions", contract, completeness, f"{completeness * 100:.1f}% of expected region-days present ({expected_days} expected days x {len(regions)} regions)."))
+
+    mkt = sources["marketing_spend"]
+    expected_combos = total_weeks * len(regions) * mkt["channel"].nunique()
+    actual_combos = len(mkt[["region", "week", "channel"]].drop_duplicates())
+    completeness = actual_combos / expected_combos if expected_combos else 0.0
+    scores.append(_quality_row("marketing_spend", contract, completeness, f"{actual_combos}/{expected_combos} expected region-week-channel combinations present."))
+
+    months = _complete_months(week1_start, as_of)
+    for name, month_col in [("crm_headcount", "month"), ("finance_gl_extract", "month")]:
+        df = sources[name]
+        expected = len(months) * len(regions)
+        actual = len(df[[month_col, "region"]].drop_duplicates())
+        completeness = actual / expected if expected else 0.0
+        scores.append(_quality_row(name, contract, completeness, f"{actual}/{expected} expected region-months present ({len(months)} complete months x {len(regions)} regions)."))
+
+    scores.append(_quality_row("support_tickets", contract, None, "No fixed reporting grain (free-text, continuously arriving) -- completeness isn't a meaningful check for this source; quality is assessed via system-of-record status and freshness only."))
+
+    return scores
+
+
+def _quality_row(source_name: str, contract: dict, completeness: float | None, note: str) -> dict:
+    is_system_of_record = contract["sources"][source_name]["system_of_record"]
+    if completeness is None:
+        tier = "n/a"
+    elif completeness >= 0.98 and is_system_of_record:
+        tier = "high"
+    elif completeness >= 0.90:
+        tier = "medium"
+    else:
+        tier = "low"
+    return {
+        "source": source_name,
+        "system_of_record": is_system_of_record,
+        "coverage_completeness_pct": round(completeness * 100, 2) if completeness is not None else None,
+        "quality_tier": tier,
+        "note": note,
+    }
+
+
 def test_revenue_source_agreement(sources: dict[str, pd.DataFrame], contract: dict) -> dict:
     """The falsifiable reconciliation claim: pos_transactions.gross_revenue
     and finance_gl_extract.gl_revenue_usd agree on revenue for the same
@@ -336,6 +417,7 @@ def main() -> None:
     panel = build_reconciled_weekly_panel(sources, contract)
     category_panel = build_category_weekly_panel(sources, contract)
     missing_data_rates = compute_missing_data_rates(sources, panel)
+    data_quality = compute_data_quality_scores(sources, contract, as_of)
 
     panel.to_csv(DATA_DIR / "reconciled_weekly.csv", index=False)
     category_panel.to_csv(DATA_DIR / "reconciled_weekly_by_category.csv", index=False)
@@ -345,6 +427,7 @@ def main() -> None:
         "revenue_source_agreement_claim": agreement,
         "rep_attribution_bounds_claim": attribution_bounds,
         "missing_data_rates": missing_data_rates,
+        "data_quality_scores": data_quality,
         "reconciled_panel_grain": "region x week",
         "reconciled_kpis": ["revenue", "units_sold", "marketing_attributed_revenue_share", "rep_attributed_revenue"],
     }
@@ -364,6 +447,12 @@ def main() -> None:
     print("Missing-data rates (per join, not per source -- a join can be 0% missing while a source is stale):")
     for row in missing_data_rates:
         print(f"  {row['join']:<70} {row['missing_rows']:>3}/{row['expected_rows']:<3} missing ({row['missing_pct']}%)")
+    print()
+    print("Data quality scores (per source -- coverage completeness against each source's own expected periods):")
+    for row in data_quality:
+        completeness = f"{row['coverage_completeness_pct']}%" if row["coverage_completeness_pct"] is not None else "n/a"
+        print(f"  {row['source']:<20} tier={row['quality_tier']:<6} completeness={completeness:<8} system_of_record={row['system_of_record']}")
+        print(f"    {row['note']}")
     print()
     print(f"Reconciled panel: {len(panel)} region-week rows -> {DATA_DIR / 'reconciled_weekly.csv'}")
 
