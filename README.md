@@ -44,6 +44,19 @@ uv run uvicorn api.main:app --reload        # then open http://127.0.0.1:8000 --
 
 [GAPS.md](GAPS.md) is a line-by-line audit against the Round 2 brief's 10 "Real-World Complexities to Consider," done by reading the actual source rather than trusting this file's own self-report. Every sub-point it flagged across all 10 items is now closed, in three passes: model/data drift monitoring, domain-level security enforcement, and marketing wired as a real falsifiable hypothesis via the previously-unused `dose_response` archetype; then a missing-data-rate metric, a persisted entitlement audit log, a real LLM predicate-generation cache (verified end-to-end on the local GPU model — a repeat run skips the model load entirely and serves from cache), and an honestly-simulated delivery-channel routing decision; then a fifth planted decoy for the "external events" driver class (a regional-storm ticket cluster, genuinely discovered by L3's clustering and killed via precedence) and a real, computed per-source data-quality tier replacing the old binary system-of-record flag. Nothing on that audit is open anymore — see GAPS.md for the detail and reasoning behind each.
 
+### Coverage against the brief's "solutioning areas" menu
+
+[SOLUTIONING.md](SOLUTIONING.md) audits REFUTE against the brief's 8 "Solutioning Areas You Could
+Explore" (anomaly detection/causal inference/business rules; governed semantics/lineage/ontology;
+LLM-assisted orchestration/narrative synthesis; proactive alerts/conversational analysis/dashboards;
+confidence scoring/evidence citation/abstention; the action-recommendation template; feedback/
+learning loops; platform-native vs. custom) — same read-the-actual-source discipline as GAPS.md.
+Most areas are genuinely covered; a few (knowledge graph structure, a chat interface, proactive
+scheduled alerts, real forecasting, LLM-driven orchestration) are deliberately not, with reasoning
+for each on whether adding them would help or actively contradict REFUTE's falsification-first
+thesis. It also lists what REFUTE has that isn't on that menu at all — the actual differentiators
+against teams working from the same list.
+
 ### The canonical worked example, actually running
 
 West revenue fell **-8.9%** in week 32 (L1 gate: PASS, posterior 0.79 — East/Central correctly stay noise, no LLM call). Seven hypotheses tested, all landing on the intended verdict:
