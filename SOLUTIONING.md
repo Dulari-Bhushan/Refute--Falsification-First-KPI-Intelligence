@@ -108,8 +108,33 @@ the ledger's feedback table).
 **Deliberately fully custom** (Python/FastAPI/SQLite, documented decision in
 [PLAN.md](PLAN.md) §3): *"REFUTE's differentiator is the falsification compiler itself, which is
 platform-agnostic logic — wiring it into Databricks/Fabric would spend hackathon time on plumbing,
-not on the novel part."* This is itself a direct, honest answer to the brief's explicit ask that
-teams be clear about native vs. configured vs. custom, rather than a dodge.
+not on the novel part."*
+
+The brief separately asks (beyond just naming a platform or not) that teams *"distinguish between
+native, configured, custom-built and externally integrated capabilities."* "Fully custom" is the
+right one-line answer to "which platform" but it understates what's actually true at the
+capability level — REFUTE calls a real set of externally-built libraries and one externally-trained
+model; it did not reimplement statistics or deep learning from scratch. Here's the honest,
+capability-by-capability breakdown, checked against `pyproject.toml` and actual imports (not
+asserted from memory):
+
+| Category | What's in it |
+|---|---|
+| **Native** (a platform's built-in feature, no code) | **None.** REFUTE integrates with zero BI/data platforms (no Databricks, Snowflake, Fabric, Tableau, Qlik, or Looker anywhere in the stack) — there is nothing that could be "native" by definition. |
+| **Configured** (a platform capability set up via config/GUI, not code) | **None**, same reason. |
+| **Custom-built** (bespoke code written for REFUTE) | The falsification-specific logic in every layer: the BOCPD implementation itself (L1, not `ruptures`), the exact price/volume/mix decomposition and Monte-Carlo Shapley sampler (L2), the naive-RAG-trap structural precedence filter (L3), the `Predicate` schema + whitelisted parameterized-SQL builder + entitlement/domain checks (L4), the DiD/parallel-trends/power-gate/BH-correction orchestration (L5 — the *decision logic*, even though it calls out to a library for the underlying regression), the narration templates, ledger schema, feedback loop, delivery-channel routing, and entitlement audit log (L6), the calibration/drift-monitoring orchestration, the knowledge graph, the proactive monitor, and the entire web UI (vanilla JS/HTML/CSS, hand-drawn SVG charts and graph diagram — no charting or graph-drawing library anywhere in `ui/`). |
+| **Externally integrated** (third-party library, framework, or model called but not built here) | `numpy`/`pandas` (array/dataframe primitives), `scipy` (Spearman correlation, the normal-distribution power-formula primitive), `scikit-learn` (`IsotonicRegression`, `AgglomerativeClustering`), `statsmodels` (the OLS engine and `TTestIndPower` — REFUTE's own code decides *when* to trust the result, not how to fit it), `pydantic` (schema validation), `sentence-transformers` (the pretrained `all-MiniLM-L6-v2` embedding model), `transformers` + `torch` + `accelerate` (model loading/inference runtime), `outlines` (constrained decoding), **Qwen2.5-3B-Instruct itself** (Alibaba Cloud/Qwen team's model weights, run locally — REFUTE did not train this model), `FastAPI` + `uvicorn` (web framework/server), and SQLite (Python's bundled `sqlite3`, an embedded database, not a hosted platform). |
+
+**One real discrepancy this specific audit found and fixed:** `sqlglot` was declared as a
+dependency (and named in the original build plan as the intended tool for "build SQL AST from
+validated predicate, not string concatenation") but was **never actually imported anywhere** —
+confirmed by grep across the whole codebase, zero hits. The compiler instead whitelists table/column
+*identifiers* against a fixed registry (`DIM_REGISTRY` in `engine/l4_compiler.py`) and binds every
+*value* as a SQLite parameter — a simpler, equally-safe pattern for this specific whitelist-driven
+use case that never needed a full SQL-AST library. Removed the unused dependency from
+`pyproject.toml` and re-locked (`uv lock` / `uv sync`) rather than leave a declared-but-dead import
+sitting in the manifest — the same "don't claim what the code doesn't do" discipline this project
+applies to every generated brief/copy claim, applied here to its own dependency list.
 
 ---
 
