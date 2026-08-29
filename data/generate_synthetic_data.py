@@ -18,12 +18,16 @@ contract in semantic/kpi_contract.yaml:
                                           reconciliation-layer demo)
   - support_tickets    continuous, free text
 
-One true cause (rep attrition in Region West) and four decoys, each planted
+One true cause (rep attrition in Region West) and five decoys, each planted
 to fail a different falsification archetype:
-  1. shipping_delay     -> killed by the PLACEBO test
-  2. competitor_launch   -> killed by the SPECIFICITY test
-  3. billing_complaints  -> killed by the PRECEDENCE test (reverse-caused)
-  4. accessories_pricing -> returns INCONCLUSIVE (genuinely underpowered)
+  1. shipping_delay      -> killed by the PLACEBO test
+  2. competitor_launch    -> killed by the SPECIFICITY test
+  3. billing_complaints   -> killed by the PRECEDENCE test (reverse-caused)
+  4. accessories_pricing  -> returns INCONCLUSIVE (genuinely underpowered)
+  5. weather_disruption   -> killed by the PRECEDENCE test (an external/macro
+                             event, reverse-caused like billing_complaints but
+                             a genuinely different driver CLASS -- see
+                             GAPS.md item 1's "external events" closure)
 
 Plus a sparse-history KPI (Outdoor category, launched week 34) and a
 definition-drift pair (pos_transactions vs finance_gl_extract) for the
@@ -67,6 +71,7 @@ CAUSE_ONSET_WEEK = 31   # reps stop actively servicing accounts
 KPI_ONSET_WEEK = 32     # the revenue drop becomes material / detected
 DECOY_ONSET_WEEK = 32   # shipping/competitor/accessories decoys surface here
 REVERSE_CAUSE_WEEK = 33  # billing complaints spike AFTER the kpi moved (reverse causation)
+WEATHER_EVENT_WEEK = 34  # the external-event decoy: a storm complaint cluster surfaces even later, also reverse-caused
 
 # West rep roster. Shares are of a "managed accounts" revenue channel that
 # is itself a fraction of total region revenue (REP_CHANNEL_SHARE_OF_REGION
@@ -357,6 +362,16 @@ TICKET_TEMPLATES = {
         "Rep note: a few accessories customers pushed back on new pricing.",
         "Accessories category pricing experiment flagged by a customer as inconsistent.",
     ],
+    "weather_disruption": [
+        "Severe winter storm hit the West region this week, roads were closed for two days.",
+        "Customer said they couldn't get to the store because of the storm warning.",
+        "Delivery delayed due to severe weather conditions across the West region.",
+        "Power outage from the storm affected several West-area customers' online orders.",
+        "West region weather advisory kept store traffic down this week.",
+        "Customer mentioned the storm knocked out power and delayed their delivery.",
+        "Regional storm warning caused a noticeable drop in West in-store visits.",
+        "Support ticket: customer's West-area order held up by storm-related road closures.",
+    ],
     "baseline_noise": [
         "Product quality praised in a 5-star review this week.",
         "Customer asked a general question about return policy.",
@@ -408,6 +423,7 @@ def generate_support_tickets(rng: np.random.Generator) -> pd.DataFrame:
     add("competitor_launch", TICKET_TEMPLATES["competitor_launch"], DECOY_ONSET_WEEK, 2, "West")
     add("billing_complaints", TICKET_TEMPLATES["billing_complaints"], REVERSE_CAUSE_WEEK, 2, "West")
     add("accessories_pricing", TICKET_TEMPLATES["accessories_pricing"], DECOY_ONSET_WEEK, 2, "West")
+    add("weather_disruption", TICKET_TEMPLATES["weather_disruption"], WEATHER_EVENT_WEEK, 2, "West")
 
     # baseline noise spread evenly across the whole 40-week window, no changepoint
     noise = TICKET_TEMPLATES["baseline_noise"]
@@ -466,6 +482,14 @@ def build_scenario_manifest() -> dict:
                 "designed_to_fail": "power",
                 "why_it_fails": "The effect is real but Accessories is West's lowest-volume category -- too few weekly observations to reach 80% power, so the honest verdict is INCONCLUSIVE, not KILLED.",
                 "expected_verdict": "INCONCLUSIVE",
+            },
+            {
+                "hypothesis_id": "h_weather_disruption",
+                "mechanism": "A severe regional storm disrupted West store traffic and deliveries, reducing revenue.",
+                "designed_to_fail": "precedence",
+                "why_it_fails": "The storm-complaint changepoint (week 34) comes AFTER the kpi's own changepoint (week 32) -- customers only started mentioning the storm once the decline was already underway, so it's a coincidentally-timed downstream event, not the cause. Represents the 'external events' driver class (macro/environmental shocks), distinct from the internal operational/competitive decoys above.",
+                "reverse_cause_onset_week": WEATHER_EVENT_WEEK,
+                "expected_verdict": "KILLED",
             },
         ],
         "sparse_history_scenario": {

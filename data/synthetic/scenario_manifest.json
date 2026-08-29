@@ -49,6 +49,14 @@
       "designed_to_fail": "power",
       "why_it_fails": "The effect is real but Accessories is West's lowest-volume category -- too few weekly observations to reach 80% power, so the honest verdict is INCONCLUSIVE, not KILLED.",
       "expected_verdict": "INCONCLUSIVE"
+    },
+    {
+      "hypothesis_id": "h_weather_disruption",
+      "mechanism": "A severe regional storm disrupted West store traffic and deliveries, reducing revenue.",
+      "designed_to_fail": "precedence",
+      "why_it_fails": "The storm-complaint changepoint (week 34) comes AFTER the kpi's own changepoint (week 32) -- customers only started mentioning the storm once the decline was already underway, so it's a coincidentally-timed downstream event, not the cause. Represents the 'external events' driver class (macro/environmental shocks), distinct from the internal operational/competitive decoys above.",
+      "reverse_cause_onset_week": 34,
+      "expected_verdict": "KILLED"
     }
   ],
   "sparse_history_scenario": {

@@ -32,9 +32,9 @@
     {
       "source": "support_tickets",
       "refresh_cadence": "near-real-time",
-      "covered_through": "2025-10-12",
+      "covered_through": "2025-09-29",
       "as_of": "2025-10-12",
-      "staleness_days": 0
+      "staleness_days": 13
     }
   ],
   "revenue_source_agreement_claim": {
@@ -93,6 +93,43 @@
       "matched_rows": 117,
       "missing_rows": 3,
       "missing_pct": 2.5
+    }
+  ],
+  "data_quality_scores": [
+    {
+      "source": "pos_transactions",
+      "system_of_record": true,
+      "coverage_completeness_pct": 100.0,
+      "quality_tier": "high",
+      "note": "100.0% of expected region-days present (280 expected days x 3 regions)."
+    },
+    {
+      "source": "marketing_spend",
+      "system_of_record": true,
+      "coverage_completeness_pct": 100.0,
+      "quality_tier": "high",
+      "note": "480/480 expected region-week-channel combinations present."
+    },
+    {
+      "source": "crm_headcount",
+      "system_of_record": true,
+      "coverage_completeness_pct": 100.0,
+      "quality_tier": "high",
+      "note": "27/27 expected region-months present (9 complete months x 3 regions)."
+    },
+    {
+      "source": "finance_gl_extract",
+      "system_of_record": false,
+      "coverage_completeness_pct": 100.0,
+      "quality_tier": "medium",
+      "note": "27/27 expected region-months present (9 complete months x 3 regions)."
+    },
+    {
+      "source": "support_tickets",
+      "system_of_record": false,
+      "coverage_completeness_pct": null,
+      "quality_tier": "n/a",
+      "note": "No fixed reporting grain (free-text, continuously arriving) -- completeness isn't a meaningful check for this source; quality is assessed via system-of-record status and freshness only."
     }
   ],
   "reconciled_panel_grain": "region x week",

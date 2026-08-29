@@ -526,6 +526,25 @@ def main() -> None:
                 )
             )
 
+        # h_weather_disruption: the "external events" driver class (GAPS.md
+        # item 1) -- same defense-in-depth reasoning as billing_complaints
+        # above. L3 already excludes this cluster structurally (its own
+        # changepoint at week 34 follows the KPI's week-32 onset), so this
+        # independently re-confirms a hypothesis that slipped past
+        # generation-time filtering would still be killed here, not trusted
+        # just because "there was a storm" sounds plausible.
+        weather_cluster = next((c for c in l3_candidates if "storm" in " ".join(c["top_terms"]).lower() or "weather" in " ".join(c["top_terms"]).lower()), None)
+        if weather_cluster is not None:
+            outcomes.append(
+                evaluate_precedence_test(
+                    "h_weather_disruption",
+                    topic_tau=weather_cluster["changepoint_week"],
+                    topic_confidence=weather_cluster["changepoint_confidence"],
+                    kpi_tau=west_revenue["changepoint_period_estimate"],
+                    kpi_confidence=west_revenue["changepoint_posterior_recent"],
+                )
+            )
+
     from engine.l4_compiler import MARKETING_DOSE_RESPONSE_FIXTURE
 
     outcomes.append(evaluate_dose_response_test(MARKETING_DOSE_RESPONSE_FIXTURE))

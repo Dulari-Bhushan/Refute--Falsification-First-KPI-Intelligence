@@ -197,6 +197,10 @@ function renderFreshness(recon) {
   const missingRows = (recon.missing_data_rates || [])
     .map((m) => `<tr><td>${m.join}</td><td>${m.matched_rows}/${m.expected_rows}</td><td class="${m.missing_pct > 5 ? "stale" : ""}">${m.missing_pct}%</td></tr>`)
     .join("");
+  const tierColor = (t) => (t === "high" ? "var(--survived)" : t === "medium" ? "var(--inconclusive)" : t === "low" ? "var(--killed)" : "var(--text-dim)");
+  const qualityRows = (recon.data_quality_scores || [])
+    .map((q) => `<tr><td>${q.source}</td><td>${q.system_of_record ? "yes" : "no"}</td><td>${q.coverage_completeness_pct !== null ? q.coverage_completeness_pct + "%" : "n/a"}</td><td style="color:${tierColor(q.quality_tier)}">${q.quality_tier.toUpperCase()}</td><td class="subtext">${q.note}</td></tr>`)
+    .join("");
   el.innerHTML = `<table class="evidence-table">
     <thead><tr><th>Source</th><th>Cadence</th><th>Covered through</th><th>Staleness</th></tr></thead>
     <tbody>${rows}</tbody>
@@ -204,7 +208,9 @@ function renderFreshness(recon) {
   <p class="subtext" style="margin-top:10px">Revenue source agreement: <strong>${recon.revenue_source_agreement_claim.verdict}</strong> &mdash; ${recon.revenue_source_agreement_claim.explanation || "sources agree within tolerance."}</p>
   ${recon.rep_attribution_bounds_claim ? `<p class="subtext" style="margin-top:6px">Rep-attribution bounds: <strong>${recon.rep_attribution_bounds_claim.verdict}</strong> &mdash; ${recon.rep_attribution_bounds_claim.explanation || ""}</p>` : ""}
   ${missingRows ? `<p class="subtext" style="margin-top:14px;margin-bottom:6px">Missing-data rate per cross-source join (an inner/left join silently drops or NaNs unmatched rows -- this quantifies that instead):</p>
-  <table class="evidence-table"><thead><tr><th>Join</th><th>Matched</th><th>Missing</th></tr></thead><tbody>${missingRows}</tbody></table>` : ""}`;
+  <table class="evidence-table"><thead><tr><th>Join</th><th>Matched</th><th>Missing</th></tr></thead><tbody>${missingRows}</tbody></table>` : ""}
+  ${qualityRows ? `<p class="subtext" style="margin-top:14px;margin-bottom:6px">Data quality per source (coverage completeness against each source's own expected periods, combined with system-of-record status -- a real graded signal, not a binary flag):</p>
+  <table class="evidence-table"><thead><tr><th>Source</th><th>System of record</th><th>Completeness</th><th>Tier</th><th>Note</th></tr></thead><tbody>${qualityRows}</tbody></table>` : ""}`;
 }
 
 // ---------------------------------------------------------------- telemetry
