@@ -6,6 +6,10 @@ teams are free to combine whichever fit. This document audits REFUTE against tha
 restating intent. For each area: what's genuinely built, what's deliberately not, and whether adding
 the missing part would help or hurt. Written 2026-08-29.
 
+**Update (2026-08-29, same day):** the two items flagged below as "cheap, low-risk, worth doing" —
+a real knowledge-graph layer and proactive/scheduled alerting — are now built. See the updated
+entries for area 2 and area 4, and the updated recommendation table, for what's real.
+
 ---
 
 ## 1. Anomaly detection, contribution analysis, forecasting, causal inference, business-rule reasoning
@@ -30,13 +34,18 @@ support scoring a recommendation's outcome later, not to predict the future inde
 | Metadata | ✅ | Grain, cadence, `system_of_record`, `access_tags`, `domain` per source/KPI |
 | Lineage | ✅ | `lineage` field per KPI, rendered in the UI's evidence panel |
 | Business rules | ✅ | Maturity rule, capacity ceiling, materiality thresholds — all contract-declared, code-enforced |
-| Ontology / knowledge graph | ❌ | Not built. The contract is a flat YAML with named relationships (a KPI *lists* its drivers, its sources) — that is a lightweight, ungoverned ontology in substance, but there's no actual graph structure (nodes/edges, traversal, a query layer like a knowledge-graph engine would provide). |
+| Ontology / knowledge graph | ✅ (was ❌) | [`engine/knowledge_graph.py`](engine/knowledge_graph.py) (new module) — a real, dependency-free directed graph (custom adjacency-list, not networkx; ~35 nodes doesn't need a graph library) built from the SAME contract data (KPI↔source, KPI↔domain, role↔domain, dimension↔table) plus this run's actual verdicts (hypothesis↔dimension, hypothesis↔verdict) — not a separately maintained copy of the truth. |
 
-**Verdict: strong on governed semantics, no real graph.** Everything a knowledge graph would need
-already exists as *data* in the contract (KPIs, sources, drivers, entitlements, domains all
-reference each other by name) — what's missing is a *structure* that lets you traverse it
-programmatically ("show me every hypothesis that touches the same dimension as a SURVIVED one,"
-"which KPIs share a driver"). See the recommendation section below on whether this is worth building.
+**Verdict: strong on governed semantics, and now a real graph too.** Three genuinely new queries
+the flat YAML couldn't answer, verified against the actual data: `related()` — "what touches
+`rep_id`?" correctly returns `crm_headcount` (backing table) and `h_rep_attrition` (the only
+hypothesis that tests it); `blast_radius()` — "what depends on `pos_transactions`?" correctly
+traces through 5 KPIs, 2 dimensions, and transitively all 7 hypotheses plus the domains and the
+reconciled `finance_gl_extract` source; `shared_mechanism()` — "what looks like the surviving
+hypothesis, structurally?" correctly finds `h_shipping_delay` (same `placebo` archetype) and
+correctly excludes the `dose_response`/`precedence`/`specificity` hypotheses. Exposed at
+`/api/knowledge-graph` (+ `/related`, `/blast-radius`, `/shared-mechanism`) and rendered as a real
+SVG diagram plus an interactive explorer in the UI's new "Knowledge Graph" panel.
 
 ## 3. LLM-assisted intent understanding, orchestration, narrative synthesis, contextual retrieval
 
@@ -57,12 +66,13 @@ prose from its own judgment. This is a considered non-use, not a missed opportun
 
 | Sub-area | Status | Where |
 |---|---|---|
-| Proactive alerts | ⚠️ | `determine_delivery_channel()`/`simulate_delivery()` compute and log **which channel a brief would route through** (Slack/email/dashboard, urgency-gated) — but nothing actually *pushes* on a schedule. There is no scheduler; the pipeline only runs when invoked. |
+| Proactive alerts | ✅ (was ⚠️) | [`engine/proactive_monitor.py`](engine/proactive_monitor.py) (new module) — `detect_new_alerts()` compares this run's L1-gated (KPI, region) movements against the immediately prior run's, routes each genuinely NEW one to every role whose `domain_scope` covers that KPI's domain (reusing the exact same domain data `check_domain_entitlement` enforces, not a separate routing table), and logs a real, urgency-gated, honestly-SIMULATED alert per role. Verified: revenue/units_sold (sales domain) correctly route to all 3 roles with that domain; `rep_attributed_revenue` (hr domain) correctly excludes `regional_vp`, matching the domain-security rule exactly. A repeat run correctly shows 0 new alerts (this demo's data is deterministic — that's the honest result, not a missed detection), and `run_alert_demo()` proves the new-vs-known logic itself is correct against a labeled synthetic two-run history. No always-on scheduler process is bundled (would be undemonstrable and dishonest in this environment) — the module is meant to be invoked by a real cron/Task Scheduler entry against live data; the docstring says so plainly. |
 | Conversational analysis | ❌ | No chat interface anywhere — confirmed by grep, zero hits for chat/conversation UI code. |
-| Augmented dashboards | ✅ | The web UI ([ui/](ui/)) — 17 panels: KPI chart with changepoint marker, priority queue, evidence tables, methods breakdown, calibration, drift, entitlement/delivery logs. |
-| Decision workspaces | ✅ mostly | Hypothesis cards with expandable raw SQL, persona-filtered briefs, a feedback-submission workflow, capacity-constrained actions — this is closer to a decision workspace than a passive dashboard, though it's read-heavy (one feedback action exists; there's no broader "workspace" for an analyst to annotate, save views, or compare runs side by side). |
+| Augmented dashboards | ✅ | The web UI ([ui/](ui/)) — 19 panels: KPI chart with changepoint marker, priority queue, evidence tables, methods breakdown, calibration, drift, entitlement/delivery logs, a knowledge-graph diagram, proactive alerts. |
+| Decision workspaces | ✅ mostly | Hypothesis cards with expandable raw SQL, persona-filtered briefs, a feedback-submission workflow, capacity-constrained actions, an interactive graph explorer — closer to a decision workspace than a passive dashboard, though it's read-heavy (there's no broader "workspace" for an analyst to annotate, save views, or compare runs side by side). |
 
-**Verdict: the dashboard is real and above a typical demo bar; alerts and chat are not built.**
+**Verdict: the dashboard and proactive alerting are both real now; only chat is not built** (and
+deliberately so — see the recommendation table below).
 
 ## 5. Confidence scoring, evidence citation, alternative hypotheses, abstention mechanisms
 
@@ -107,9 +117,9 @@ teams be clear about native vs. configured vs. custom, rather than a dodge.
 
 | Candidate | Add it? | Why |
 |---|---|---|
-| **Knowledge graph / ontology layer** | **Lean yes, if time allows** | The relationship data already exists in the contract; a real graph structure (even a lightweight in-memory `networkx` graph built from the existing YAML, not a new database) would let REFUTE answer genuinely new questions ("what else touches this dimension," "which surviving hypotheses share a mechanism-shape") and look more sophisticated in a demo — and it's a menu item judges may specifically look for. Low risk of contradicting REFUTE's thesis since it's pure structure, not a new source of unverified claims. |
-| **Chat / conversational interface** | **Yes, but only if it stays a front-end to the SAME falsification backend** | Risky if done naively: "chat with your data" is almost certainly the single most common thing other teams will build, and it's exactly the naive pattern REFUTE's own positioning (§2, README.md) argues against ("LLM reads data → LLM writes an explanation" — a statistical guarantee of finding *something*, not evidence of causation). Done correctly — a natural-language question routes into an *existing* predicate/hypothesis lookup or triggers a *real* new falsification test, and the answer is still a verdict + evidence, never free-form LLM prose asserting a cause — it would reinforce the differentiation rather than dilute it. Not worth it if the only outcome is "now the LLM also writes the final paragraph." |
-| **Proactive/scheduled alerting** | **Yes, cheap and natural** | The delivery-channel routing decision already exists (`determine_delivery_channel`); the only missing piece is a scheduler that re-runs the pipeline periodically and pushes only when a *new* movement clears the L1 gate. Low effort (a loop + the existing telemetry/ledger), genuinely closes menu item 4's "proactive" half, and is a natural, non-contradictory extension of what's already built. |
+| **Knowledge graph / ontology layer** | ✅ **Done** | [`engine/knowledge_graph.py`](engine/knowledge_graph.py) — see area 2 above for the verified queries. Built dependency-free (no `networkx`) since ~35 nodes doesn't need a graph library. |
+| **Chat / conversational interface** | **Yes, but only if it stays a front-end to the SAME falsification backend** | Risky if done naively: "chat with your data" is almost certainly the single most common thing other teams will build, and it's exactly the naive pattern REFUTE's own positioning (§2, README.md) argues against ("LLM reads data → LLM writes an explanation" — a statistical guarantee of finding *something*, not evidence of causation). Done correctly — a natural-language question routes into an *existing* predicate/hypothesis lookup or triggers a *real* new falsification test, and the answer is still a verdict + evidence, never free-form LLM prose asserting a cause — it would reinforce the differentiation rather than dilute it. Not worth it if the only outcome is "now the LLM also writes the final paragraph." Still not built — the one open recommendation on this list. |
+| **Proactive/scheduled alerting** | ✅ **Done** | [`engine/proactive_monitor.py`](engine/proactive_monitor.py) — see area 4 above. No always-on scheduler process is bundled (documented as a real, deliberate limitation: schedule the module's `main()` via a real cron/Task Scheduler entry against live data), since faking one running inside this demo environment would be undemonstrable and dishonest. |
 | **Real forecasting model** | **No, low priority** | Would require a genuine time-series model (ARIMA/Prophet-class) with its own validation story, and risks scope creep into a second discipline (forecasting) that isn't REFUTE's differentiator. The existing stated-assumption counterfactual projection already does the job the brief actually needs (show what recovery would look like if the action works), honestly labeled as a projection, not a forecast. |
 | **LLM orchestration (agentic pipeline control)** | **No** | Would directly undermine the one structural guarantee REFUTE stands on (`assert_llm_not_quantitative_source()` in `engine/methods_registry.py`) — the LLM proposes, it never decides what runs or what the verdict means. This menu item exists for teams building an agent; REFUTE's whole pitch is that an agent freely deciding things is the failure mode being fixed. |
 | **Expert sign-off tracking** | **Yes, cheap** | A `reviewed_by`/`review_status` field on the feedback/ledger tables is a small, real addition that closes the one genuinely thin sub-point in area 7, and pairs naturally with the entitlement audit log already built. |

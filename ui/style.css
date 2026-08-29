@@ -184,6 +184,16 @@ button.action-btn {
 button.action-btn:hover { opacity: 0.9; }
 button.action-btn:disabled { opacity: 0.5; cursor: default; }
 
+select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
 .feedback-result {
   margin-top: 14px;
   padding: 12px 14px;

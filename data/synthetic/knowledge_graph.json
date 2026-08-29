@@ -1,0 +1,499 @@
+{
+  "nodes": [
+    {
+      "id": "source:pos_transactions",
+      "type": "source",
+      "label": "pos_transactions",
+      "cadence": "daily",
+      "system_of_record": true
+    },
+    {
+      "id": "source:marketing_spend",
+      "type": "source",
+      "label": "marketing_spend",
+      "cadence": "weekly",
+      "system_of_record": true
+    },
+    {
+      "id": "source:crm_headcount",
+      "type": "source",
+      "label": "crm_headcount",
+      "cadence": "monthly",
+      "system_of_record": true
+    },
+    {
+      "id": "source:finance_gl_extract",
+      "type": "source",
+      "label": "finance_gl_extract",
+      "cadence": "monthly",
+      "system_of_record": false
+    },
+    {
+      "id": "source:support_tickets",
+      "type": "source",
+      "label": "support_tickets",
+      "cadence": "near-real-time",
+      "system_of_record": false
+    },
+    {
+      "id": "domain:sales",
+      "type": "domain",
+      "label": "sales"
+    },
+    {
+      "id": "domain:marketing",
+      "type": "domain",
+      "label": "marketing"
+    },
+    {
+      "id": "domain:hr",
+      "type": "domain",
+      "label": "hr"
+    },
+    {
+      "id": "kpi:revenue",
+      "type": "kpi",
+      "label": "revenue",
+      "domain": "sales",
+      "owner": "Regional VP of Sales"
+    },
+    {
+      "id": "kpi:units_sold",
+      "type": "kpi",
+      "label": "units_sold",
+      "domain": "sales",
+      "owner": "Regional VP of Sales"
+    },
+    {
+      "id": "kpi:marketing_attributed_revenue_share",
+      "type": "kpi",
+      "label": "marketing_attributed_revenue_share",
+      "domain": "marketing",
+      "owner": "Head of Marketing"
+    },
+    {
+      "id": "kpi:rep_attributed_revenue",
+      "type": "kpi",
+      "label": "rep_attributed_revenue",
+      "domain": "hr",
+      "owner": "Regional VP of Sales"
+    },
+    {
+      "id": "kpi:new_category_revenue",
+      "type": "kpi",
+      "label": "new_category_revenue",
+      "domain": "sales",
+      "owner": "Category Manager, New Launches"
+    },
+    {
+      "id": "dim:fulfillment_center",
+      "type": "dimension",
+      "label": "fulfillment_center"
+    },
+    {
+      "id": "dim:product_category",
+      "type": "dimension",
+      "label": "product_category"
+    },
+    {
+      "id": "dim:rep_id",
+      "type": "dimension",
+      "label": "rep_id"
+    },
+    {
+      "id": "dim:channel",
+      "type": "dimension",
+      "label": "channel"
+    },
+    {
+      "id": "verdict:KILLED",
+      "type": "verdict",
+      "label": "KILLED"
+    },
+    {
+      "id": "verdict:SURVIVED",
+      "type": "verdict",
+      "label": "SURVIVED"
+    },
+    {
+      "id": "verdict:INCONCLUSIVE",
+      "type": "verdict",
+      "label": "INCONCLUSIVE"
+    },
+    {
+      "id": "role:ops_manager_west",
+      "type": "role",
+      "label": "ops_manager_west",
+      "persona": "ops_manager"
+    },
+    {
+      "id": "channel:slack_channel",
+      "type": "channel",
+      "label": "slack_channel"
+    },
+    {
+      "id": "channel:dashboard",
+      "type": "channel",
+      "label": "dashboard"
+    },
+    {
+      "id": "role:regional_vp",
+      "type": "role",
+      "label": "regional_vp",
+      "persona": "exec_vp"
+    },
+    {
+      "id": "channel:email_digest",
+      "type": "channel",
+      "label": "email_digest"
+    },
+    {
+      "id": "role:marketing_analyst",
+      "type": "role",
+      "label": "marketing_analyst",
+      "persona": "marketing_analyst"
+    },
+    {
+      "id": "role:platform_engineer",
+      "type": "role",
+      "label": "platform_engineer",
+      "persona": "engineer"
+    },
+    {
+      "id": "hyp:h_shipping_delay",
+      "type": "hypothesis",
+      "label": "h_shipping_delay",
+      "test_archetype": "placebo",
+      "verdict": "KILLED"
+    },
+    {
+      "id": "hyp:h_competitor_launch",
+      "type": "hypothesis",
+      "label": "h_competitor_launch",
+      "test_archetype": "specificity",
+      "verdict": "KILLED"
+    },
+    {
+      "id": "hyp:h_accessories_pricing",
+      "type": "hypothesis",
+      "label": "h_accessories_pricing",
+      "test_archetype": "specificity",
+      "verdict": "INCONCLUSIVE"
+    },
+    {
+      "id": "hyp:h_rep_attrition",
+      "type": "hypothesis",
+      "label": "h_rep_attrition",
+      "test_archetype": "placebo",
+      "verdict": "SURVIVED"
+    },
+    {
+      "id": "hyp:h_billing_complaints",
+      "type": "hypothesis",
+      "label": "h_billing_complaints",
+      "test_archetype": "precedence",
+      "verdict": "KILLED"
+    },
+    {
+      "id": "dim:ticket_topic",
+      "type": "dimension",
+      "label": "ticket_topic"
+    },
+    {
+      "id": "hyp:h_weather_disruption",
+      "type": "hypothesis",
+      "label": "h_weather_disruption",
+      "test_archetype": "precedence",
+      "verdict": "KILLED"
+    },
+    {
+      "id": "hyp:h_marketing_spend_cut",
+      "type": "hypothesis",
+      "label": "h_marketing_spend_cut",
+      "test_archetype": "dose_response",
+      "verdict": "INCONCLUSIVE"
+    }
+  ],
+  "edges": [
+    {
+      "source": "kpi:revenue",
+      "target": "source:pos_transactions",
+      "relation": "SOURCED_FROM"
+    },
+    {
+      "source": "kpi:revenue",
+      "target": "source:finance_gl_extract",
+      "relation": "RECONCILED_AGAINST"
+    },
+    {
+      "source": "kpi:revenue",
+      "target": "domain:sales",
+      "relation": "BELONGS_TO_DOMAIN"
+    },
+    {
+      "source": "kpi:revenue",
+      "target": "kpi:units_sold",
+      "relation": "HAS_DRIVER"
+    },
+    {
+      "source": "kpi:revenue",
+      "target": "kpi:marketing_attributed_revenue_share",
+      "relation": "HAS_DRIVER"
+    },
+    {
+      "source": "kpi:revenue",
+      "target": "kpi:rep_attributed_revenue",
+      "relation": "HAS_DRIVER"
+    },
+    {
+      "source": "kpi:units_sold",
+      "target": "source:pos_transactions",
+      "relation": "SOURCED_FROM"
+    },
+    {
+      "source": "kpi:units_sold",
+      "target": "domain:sales",
+      "relation": "BELONGS_TO_DOMAIN"
+    },
+    {
+      "source": "kpi:marketing_attributed_revenue_share",
+      "target": "source:marketing_spend",
+      "relation": "SOURCED_FROM"
+    },
+    {
+      "source": "kpi:marketing_attributed_revenue_share",
+      "target": "source:pos_transactions",
+      "relation": "SOURCED_FROM"
+    },
+    {
+      "source": "kpi:marketing_attributed_revenue_share",
+      "target": "domain:marketing",
+      "relation": "BELONGS_TO_DOMAIN"
+    },
+    {
+      "source": "kpi:rep_attributed_revenue",
+      "target": "source:crm_headcount",
+      "relation": "SOURCED_FROM"
+    },
+    {
+      "source": "kpi:rep_attributed_revenue",
+      "target": "source:pos_transactions",
+      "relation": "SOURCED_FROM"
+    },
+    {
+      "source": "kpi:rep_attributed_revenue",
+      "target": "domain:hr",
+      "relation": "BELONGS_TO_DOMAIN"
+    },
+    {
+      "source": "kpi:new_category_revenue",
+      "target": "source:pos_transactions",
+      "relation": "SOURCED_FROM"
+    },
+    {
+      "source": "kpi:new_category_revenue",
+      "target": "domain:sales",
+      "relation": "BELONGS_TO_DOMAIN"
+    },
+    {
+      "source": "dim:fulfillment_center",
+      "target": "source:pos_transactions",
+      "relation": "BACKED_BY_TABLE"
+    },
+    {
+      "source": "dim:product_category",
+      "target": "source:pos_transactions",
+      "relation": "BACKED_BY_TABLE"
+    },
+    {
+      "source": "dim:rep_id",
+      "target": "source:crm_headcount",
+      "relation": "BACKED_BY_TABLE"
+    },
+    {
+      "source": "dim:channel",
+      "target": "source:marketing_spend",
+      "relation": "BACKED_BY_TABLE"
+    },
+    {
+      "source": "role:ops_manager_west",
+      "target": "domain:sales",
+      "relation": "SCOPED_TO_DOMAIN"
+    },
+    {
+      "source": "role:ops_manager_west",
+      "target": "domain:marketing",
+      "relation": "SCOPED_TO_DOMAIN"
+    },
+    {
+      "source": "role:ops_manager_west",
+      "target": "domain:hr",
+      "relation": "SCOPED_TO_DOMAIN"
+    },
+    {
+      "source": "role:ops_manager_west",
+      "target": "channel:slack_channel",
+      "relation": "CAN_PUSH_VIA"
+    },
+    {
+      "source": "role:ops_manager_west",
+      "target": "channel:dashboard",
+      "relation": "CAN_PUSH_VIA"
+    },
+    {
+      "source": "role:regional_vp",
+      "target": "domain:sales",
+      "relation": "SCOPED_TO_DOMAIN"
+    },
+    {
+      "source": "role:regional_vp",
+      "target": "domain:marketing",
+      "relation": "SCOPED_TO_DOMAIN"
+    },
+    {
+      "source": "role:regional_vp",
+      "target": "channel:email_digest",
+      "relation": "CAN_PUSH_VIA"
+    },
+    {
+      "source": "role:regional_vp",
+      "target": "channel:dashboard",
+      "relation": "CAN_PUSH_VIA"
+    },
+    {
+      "source": "role:marketing_analyst",
+      "target": "domain:marketing",
+      "relation": "SCOPED_TO_DOMAIN"
+    },
+    {
+      "source": "role:marketing_analyst",
+      "target": "channel:dashboard",
+      "relation": "CAN_PUSH_VIA"
+    },
+    {
+      "source": "role:platform_engineer",
+      "target": "domain:sales",
+      "relation": "SCOPED_TO_DOMAIN"
+    },
+    {
+      "source": "role:platform_engineer",
+      "target": "domain:marketing",
+      "relation": "SCOPED_TO_DOMAIN"
+    },
+    {
+      "source": "role:platform_engineer",
+      "target": "domain:hr",
+      "relation": "SCOPED_TO_DOMAIN"
+    },
+    {
+      "source": "role:platform_engineer",
+      "target": "channel:dashboard",
+      "relation": "CAN_PUSH_VIA"
+    },
+    {
+      "source": "hyp:h_shipping_delay",
+      "target": "dim:fulfillment_center",
+      "relation": "TESTS_DIMENSION"
+    },
+    {
+      "source": "hyp:h_shipping_delay",
+      "target": "verdict:KILLED",
+      "relation": "HAS_VERDICT"
+    },
+    {
+      "source": "hyp:h_shipping_delay",
+      "target": "kpi:revenue",
+      "relation": "TARGETS_KPI"
+    },
+    {
+      "source": "hyp:h_competitor_launch",
+      "target": "dim:product_category",
+      "relation": "TESTS_DIMENSION"
+    },
+    {
+      "source": "hyp:h_competitor_launch",
+      "target": "verdict:KILLED",
+      "relation": "HAS_VERDICT"
+    },
+    {
+      "source": "hyp:h_competitor_launch",
+      "target": "kpi:revenue",
+      "relation": "TARGETS_KPI"
+    },
+    {
+      "source": "hyp:h_accessories_pricing",
+      "target": "dim:product_category",
+      "relation": "TESTS_DIMENSION"
+    },
+    {
+      "source": "hyp:h_accessories_pricing",
+      "target": "verdict:INCONCLUSIVE",
+      "relation": "HAS_VERDICT"
+    },
+    {
+      "source": "hyp:h_accessories_pricing",
+      "target": "kpi:revenue",
+      "relation": "TARGETS_KPI"
+    },
+    {
+      "source": "hyp:h_rep_attrition",
+      "target": "dim:rep_id",
+      "relation": "TESTS_DIMENSION"
+    },
+    {
+      "source": "hyp:h_rep_attrition",
+      "target": "verdict:SURVIVED",
+      "relation": "HAS_VERDICT"
+    },
+    {
+      "source": "hyp:h_rep_attrition",
+      "target": "kpi:revenue",
+      "relation": "TARGETS_KPI"
+    },
+    {
+      "source": "hyp:h_billing_complaints",
+      "target": "dim:ticket_topic",
+      "relation": "TESTS_DIMENSION"
+    },
+    {
+      "source": "hyp:h_billing_complaints",
+      "target": "verdict:KILLED",
+      "relation": "HAS_VERDICT"
+    },
+    {
+      "source": "hyp:h_billing_complaints",
+      "target": "kpi:revenue",
+      "relation": "TARGETS_KPI"
+    },
+    {
+      "source": "hyp:h_weather_disruption",
+      "target": "dim:ticket_topic",
+      "relation": "TESTS_DIMENSION"
+    },
+    {
+      "source": "hyp:h_weather_disruption",
+      "target": "verdict:KILLED",
+      "relation": "HAS_VERDICT"
+    },
+    {
+      "source": "hyp:h_weather_disruption",
+      "target": "kpi:revenue",
+      "relation": "TARGETS_KPI"
+    },
+    {
+      "source": "hyp:h_marketing_spend_cut",
+      "target": "dim:channel",
+      "relation": "TESTS_DIMENSION"
+    },
+    {
+      "source": "hyp:h_marketing_spend_cut",
+      "target": "verdict:INCONCLUSIVE",
+      "relation": "HAS_VERDICT"
+    },
+    {
+      "source": "hyp:h_marketing_spend_cut",
+      "target": "kpi:revenue",
+      "relation": "TARGETS_KPI"
+    }
+  ]
+}

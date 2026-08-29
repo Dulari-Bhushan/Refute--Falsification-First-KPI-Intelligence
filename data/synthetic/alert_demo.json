@@ -1,0 +1,21 @@
+{
+  "label": "SIMULATED DEMONSTRATION -- not written to the live ledger",
+  "honesty_note": "This demo's own synthetic data is deterministic (same seed every run), so repeated real runs correctly show 0 new alerts once a baseline exists -- that's honest behavior, not a bug. This proves the detection logic itself is correct using a clearly labeled synthetic two-run history: a prior run gating 2 movements, a current run gating those same 2 plus one genuinely new one.",
+  "prior_run_gated": [
+    "revenue (West)",
+    "units_sold (West)"
+  ],
+  "current_run_gated": [
+    "rep_attributed_revenue (West)",
+    "revenue (West)",
+    "units_sold (West)"
+  ],
+  "correctly_identified_as_new": [
+    "rep_attributed_revenue (West)"
+  ],
+  "correctly_identified_as_not_new": [
+    "revenue (West)",
+    "units_sold (West)"
+  ],
+  "detector_correct": true
+}

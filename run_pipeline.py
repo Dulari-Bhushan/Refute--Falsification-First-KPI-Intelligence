@@ -35,6 +35,7 @@ STEPS = [
     ("L3 -- hypothesis generation", ["-m", "engine.l3_hypothesise"]),
     ("L5 -- falsification + adjudication (compiles via L4 internally)", ["-m", "engine.l5_adjudicate"]),
     ("L6 -- narration, ledger, personas, telemetry, feedback", ["-m", "engine.l6_narrate_ledger"]),
+    ("Knowledge graph -- built from the contract + this run's verdicts", ["-m", "engine.knowledge_graph"]),
 ]
 LLM_STEP = ("L4 -- live LLM predicate generation (local GPU)", ["-m", "engine.l4_llm_generation"])
 
