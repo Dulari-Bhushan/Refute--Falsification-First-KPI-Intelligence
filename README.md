@@ -262,9 +262,24 @@ Answered structurally, not just asserted: [`engine/methods_registry.py`](engine/
 
 Retrieval gets the same treatment: L3's ticket-topic clustering is explicitly *not* naive RAG (see `engine/l3_hypothesise.py`'s docstring) — retrieving tickets from the anomaly window is fatally biased since ticket volume moves in every bad week regardless of cause, so a topic only becomes a candidate if it has its own independent BOCPD changepoint that precedes the KPI's, checked structurally, not left to an LLM's judgment.
 
-### Minimum prototype expectations
+### Minimum prototype expectations (re-verified 2026-08-29, not just restated)
 
-All satisfied — 5 connected KPIs across 3 sources at 3 cadences; the semantic contract (`semantic/kpi_contract.yaml`); 3 personas; the canonical multi-factor worked example; the accessories-pricing low-confidence/abstain scenario; the Outdoor sparse-history scenario; the `regional_vp` role-based entitlement denial (now alongside a third `platform_engineer` role); the evidence panel (freshness/method/contribution/confidence/lineage together); the LLM-vs-non-LLM breakdown (telemetry strip + methods registry); runtime telemetry (latency, real token counts, real model calls, $0 actual cost with a hosted-API cost comparison for context).
+All 10 satisfied, most well past the stated minimum — checked against the actual code, not
+recalled from memory (the exact counts below had drifted stale in an earlier version of this
+paragraph until this pass caught it):
+
+| # | Expectation | Status | Evidence |
+|---|---|---|---|
+| 1 | 3-5 connected KPIs across 2-3 sources, different grains/cadences | ✅ exceeds | **5** KPIs (`revenue`, `units_sold`, `marketing_attributed_revenue_share`, `rep_attributed_revenue`, `new_category_revenue`) across **5** sources (not 2-3) at **4** distinct cadences — daily (`pos_transactions`), weekly (`marketing_spend`), monthly (`crm_headcount`, `finance_gl_extract`), near-real-time (`support_tickets`) |
+| 2 | Lightweight semantic contract: definitions, calculations, drivers, thresholds, lineage, access restrictions | ✅ | [`semantic/kpi_contract.yaml`](semantic/kpi_contract.yaml) — verified every one of the 5 KPIs has all of `definition`/`formula`/`grain`/`sources`/`owner`/`materiality`/`lineage`/`access_tags`/`domain` (not just the headline `revenue` KPI; checked programmatically, zero missing fields anywhere) |
+| 3 | ≥2 personas, different narratives/actions | ✅ exceeds | **3** rendered personas (Leader/`regional_vp`, Manager/`ops_manager_west`, Engineer/`platform_engineer`), verified genuinely different content per role in the browser, plus a 4th entitlement role (`marketing_analyst`) used for the domain-security demo |
+| 4 | One multi-factor KPI movement, known/simulated drivers | ✅ exceeds | The canonical West-revenue movement now has **7** candidate hypotheses tested (was 5 at the brief's minimum bar), spanning all four archetypes (placebo, specificity, precedence ×2, dose_response) plus L2's independent price/volume/mix + Shapley decomposition |
+| 5 | One low-confidence scenario, engine requests clarification or abstains | ✅, with a stated nuance | **Two** independent INCONCLUSIVE verdicts exist (`h_accessories_pricing`, `h_marketing_spend_cut`), each naming the exact condition that would resolve it ("would need more weeks of history/treatment units" / "more regions or channels"). Precise nuance: this is a *stated resolution path*, not an *interactive* clarification prompt — there's no UI flow where a user supplies the missing data and the system re-tests live. Given the choice, a named, checkable resolving condition is arguably the more rigorous form of "abstain and say why" the brief is actually after, but it's worth being exact about which shape this takes. |
+| 6 | One sparse-history / newly-launched KPI scenario | ✅ | Outdoor category (launched week 34, `new_category_revenue` KPI) — empirical-Bayes shrinkage, output explicitly states "too little to speak with full confidence." Genuinely distinct from item 5's scenarios (a detection-time abstention, not a hypothesis-testing one) |
+| 7 | One role-based security/entitlement scenario | ✅ exceeds | **Three** independent layers (row/region, column/rep-detail, domain), not one — see [GAPS.md](GAPS.md) item 8. `regional_vp` is denied at all three layers in different, verifiable ways |
+| 8 | Evidence: freshness, method, contribution, confidence, lineage, together | ✅ | `/api/evidence` deliberately bundles reconciliation (freshness + lineage), L2 (contribution), L3 (topic evidence) in one response; confidence is threaded through every hypothesis card; `engine/methods_registry.py` names the method category per stage |
+| 9 | Clear LLM vs. non-LLM breakdown | ✅ | The telemetry strip + Methods Breakdown panel render this live from `engine/methods_registry.py`'s `REGISTRY`, structurally checked (`assert_llm_not_quantitative_source()`) rather than just documented |
+| 10 | Runtime telemetry: latency, model calls, tokens, cost | ✅ | Real per-stage `telemetry` ledger rows; a real `--with-llm` run shows genuine figures (e.g. 8268ms, 583 in/228 out tokens, $0.0000 actual local-GPU cost vs. ~$0.0052 if hosted) — not placeholder numbers |
 
 ### Beyond the brief (Tier 3 stretch, not required but built)
 
