@@ -13,7 +13,6 @@ dependencies = [
     "scikit-learn>=1.9.0",
     "scipy>=1.18.1",
     "sentence-transformers>=6.0.0",
-    "sqlglot>=30.17.0",
     "statsmodels>=0.15.0",
     "transformers>=5.16.1",
     "torch>=2.11.0",
