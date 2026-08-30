@@ -501,9 +501,9 @@ def simulate_delivery(ledger: sqlite3.Connection, run_id: str, role: str, action
 # --------------------------------------------------------------------------
 
 
-def render_ops_manager_brief(outcomes: list, action: dict) -> str:
+def render_ops_manager_brief(outcomes: list, action: dict, kpi_headline: str) -> str:
     lines = ["=== West Ops Manager brief (full evidence chain) ===", ""]
-    lines.append("KPI: revenue, Region West, week 32 -- fell ~8.9% (L1 changepoint posterior 0.79, both statistically and business material)")
+    lines.append(kpi_headline)
     lines.append("")
     lines.append("Hypotheses tested:")
     for o in outcomes:
@@ -522,19 +522,19 @@ def render_ops_manager_brief(outcomes: list, action: dict) -> str:
     return "\n".join(lines)
 
 
-def render_vp_brief(outcomes: list, action: dict, role: str, region: str, contract: dict, ledger: sqlite3.Connection | None = None, run_id: str | None = None) -> str:
+def render_vp_brief(outcomes: list, action: dict, role: str, region: str, contract: dict, kpi_headline: str, ledger: sqlite3.Connection | None = None, run_id: str | None = None) -> str:
     survived = [o for o in outcomes if o.verdict == "SURVIVED"]
     killed = [o for o in outcomes if o.verdict == "KILLED"]
     inconclusive = [o for o in outcomes if o.verdict == "INCONCLUSIVE"]
 
     lines = ["=== Regional VP brief (headline + action, no statistical detail) ===", ""]
     if survived:
-        lines.append(f"Revenue fell ~8.9% in West (week 32). Cause: {survived[0].hypothesis_id.replace('h_', '').replace('_', ' ')}.")
+        lines.append(f"{kpi_headline} Cause: {survived[0].hypothesis_id.replace('h_', '').replace('_', ' ')}.")
         lines.append(f"{len(killed)} alternative explanation(s) tested and ruled out" + (f"; {len(inconclusive)} inconclusive (needs more data)." if inconclusive else "."))
         lines.append(f"Next step: {action['action']}")
         lines.append(f"Confidence: {action['confidence'].split(' -- ')[0]}")
     else:
-        lines.append("Revenue fell ~8.9% in West (week 32). No cause has been confirmed yet.")
+        lines.append(f"{kpi_headline} No cause has been confirmed yet.")
 
     # Column-level entitlement: this persona is denied rep-level detail --
     # checked here, before anything rep-specific would be rendered, not
@@ -784,10 +784,13 @@ def main() -> None:
     all_telemetry = [dict(r) for r in ledger.execute("SELECT * FROM telemetry ORDER BY id DESC LIMIT 500").fetchall()]
     ledger.row_factory = None
 
+    west_revenue_result = next((r for r in l1_results if r["kpi"] == "revenue" and r["region"] == "West"), None)
+    kpi_headline = west_revenue_result["narrative"] if west_revenue_result else "No KPI movement data available for this run."
+
     with telemetry_span(ledger, run_id, "L6_narrate", is_llm_call=False):
         action = build_action_recommendation(l2_results, survived_outcome, contract)
-        ops_brief = render_ops_manager_brief(outcomes, action)
-        vp_brief = render_vp_brief(outcomes, action, role="regional_vp", region="West", contract=contract, ledger=ledger, run_id=run_id)
+        ops_brief = render_ops_manager_brief(outcomes, action, kpi_headline)
+        vp_brief = render_vp_brief(outcomes, action, role="regional_vp", region="West", contract=contract, kpi_headline=kpi_headline, ledger=ledger, run_id=run_id)
         engineer_brief = render_engineer_brief(outcomes, action, all_telemetry)
 
     print(ops_brief)

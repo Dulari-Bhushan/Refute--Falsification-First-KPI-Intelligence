@@ -61,13 +61,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-import outlines
-import torch
+import httpx
 import yaml
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from engine.l3_hypothesise import TopicCandidate
 from engine.l4_compiler import Predicate, PredicateRejected, validate_predicate
+from engine.llm_config import get_llm_config
 
 DATA_DIR = Path(__file__).parent.parent / "data" / "synthetic"
 CONTRACT_PATH = Path(__file__).parent.parent / "semantic" / "kpi_contract.yaml"
@@ -142,6 +141,8 @@ def topic_cache_key(topic: TopicCandidate, kpi_context: dict) -> str:
     cluster_id that could get reassigned across runs) plus the KPI context
     that shaped the prompt, so a genuinely different scenario never
     collides with a cached one."""
+    config = get_llm_config()
+    model_identity = config["openrouter_model"] if config["backend"] == "openrouter" else MODEL_NAME
     payload = json.dumps(
         {
             "top_terms": sorted(topic.top_terms),
@@ -150,6 +151,11 @@ def topic_cache_key(topic: TopicCandidate, kpi_context: dict) -> str:
             "region": kpi_context["region"],
             "kpi_onset_week": kpi_context["kpi_onset_week"],
             "movement_pct": round(kpi_context["movement_pct"], 3),
+            # backend+model included deliberately: switching backends should
+            # generate fresh (and report honest, backend-appropriate cost),
+            # never silently serve a different backend's cached output.
+            "backend": config["backend"],
+            "model": model_identity,
         },
         sort_keys=True,
     )
@@ -172,9 +178,11 @@ def _record_cache_hit(ledger: sqlite3.Connection, cache_key: str) -> None:
 
 
 def _store_cache(ledger: sqlite3.Connection, cache_key: str, result: "GenerationResult") -> None:
+    config = get_llm_config()
+    model_identity = config["openrouter_model"] if config["backend"] == "openrouter" else MODEL_NAME
     ledger.execute(
         "INSERT OR REPLACE INTO llm_predicate_cache (cache_key, model, predicate_json, reason, prompt_tokens, completion_tokens, original_latency_ms, hit_count, created_at, last_hit_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (cache_key, MODEL_NAME, json.dumps(result.predicate_dict), result.reason, result.prompt_tokens, result.completion_tokens, result.latency_ms, 0, datetime.now(timezone.utc).isoformat(), None),
+        (cache_key, model_identity, json.dumps(result.predicate_dict), result.reason, result.prompt_tokens, result.completion_tokens, result.latency_ms, 0, datetime.now(timezone.utc).isoformat(), None),
     )
     ledger.commit()
 
@@ -184,9 +192,16 @@ _tokenizer = None
 
 
 def _load() -> tuple:
+    """Local-backend only. Imports torch/transformers/outlines lazily, right
+    here, rather than at module load -- so choosing the OpenRouter backend
+    never needs a CUDA-capable machine or a ~6GB model download at all."""
     global _generator, _tokenizer
     if _generator is not None:
         return _generator, _tokenizer
+    import outlines
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     model = AutoModelForCausalLM.from_pretrained(
@@ -309,22 +324,75 @@ def generate_predicate_for_topic(topic: TopicCandidate, kpi_context: dict, ledge
     return result
 
 
-def _generate_and_validate(system_prompt: str, user_prompt: str) -> GenerationResult:
+def _call_local(messages: list[dict]) -> tuple[str, int, int, float]:
     generator, tokenizer = _load()
+    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    prompt_tokens = len(tokenizer(prompt)["input_ids"])
+    start = time.perf_counter()
+    raw = generator(prompt, max_new_tokens=MAX_NEW_TOKENS)
+    latency_ms = (time.perf_counter() - start) * 1000
+    completion_tokens = len(tokenizer(raw)["input_ids"])
+    return raw, prompt_tokens, completion_tokens, latency_ms
+
+
+def _call_openrouter(messages: list[dict], api_key: str, model: str) -> tuple[str, int, int, float]:
+    """No token-level schema constraint here -- OpenRouter's hosted models
+    don't expose logits for `outlines` to constrain, so this relies on
+    `response_format: json_object` plus the identical two-gate validation
+    (schema + semantic domain) every other path already runs. A predicate
+    that fails either gate is rejected exactly like a local-model failure,
+    which is what keeps this backend swap honest: neither path is trusted
+    more just because it produced valid JSON."""
+    start = time.perf_counter()
+    resp = httpx.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={"model": model, "messages": messages, "response_format": {"type": "json_object"}, "max_tokens": MAX_NEW_TOKENS},
+        timeout=60.0,
+    )
+    latency_ms = (time.perf_counter() - start) * 1000
+    resp.raise_for_status()
+    payload = resp.json()
+    content = payload["choices"][0]["message"]["content"]
+    usage = payload.get("usage", {})
+    return content, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), latency_ms
+
+
+def _generate_and_validate(system_prompt: str, user_prompt: str) -> GenerationResult:
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    prompt_tokens = len(tokenizer(prompt)["input_ids"])
+    config = get_llm_config()
+    backend = config["backend"]
+
+    if backend == "openrouter" and not config.get("api_key"):
+        return GenerationResult(
+            predicate_dict=None,
+            accepted=False,
+            reason="OpenRouter backend selected but no API key is configured -- set one in the dashboard's LLM Settings panel, or switch back to Local GPU.",
+            prompt_tokens=0,
+            completion_tokens=0,
+            latency_ms=0.0,
+            raw_output="",
+        )
 
     last_reason = "unknown failure"
+    last_prompt_tokens = 0
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        start = time.perf_counter()
-        raw = generator(prompt, max_new_tokens=MAX_NEW_TOKENS)
-        latency_ms = (time.perf_counter() - start) * 1000
-        completion_tokens = len(tokenizer(raw)["input_ids"])
+        try:
+            if backend == "openrouter":
+                raw, prompt_tokens, completion_tokens, latency_ms = _call_openrouter(messages, config["api_key"], config["openrouter_model"])
+            else:
+                raw, prompt_tokens, completion_tokens, latency_ms = _call_local(messages)
+        except httpx.HTTPStatusError as e:
+            last_reason = f"attempt {attempt}: OpenRouter API error {e.response.status_code}: {e.response.text[:200]}"
+            continue
+        except httpx.HTTPError as e:
+            last_reason = f"attempt {attempt}: OpenRouter request failed: {e}"
+            continue
 
+        last_prompt_tokens = prompt_tokens
         try:
             raw_dict = json.loads(raw) if isinstance(raw, str) else raw
             predicate = validate_predicate(raw_dict)  # schema gate, incl. hard refutes_if check
@@ -339,7 +407,7 @@ def _generate_and_validate(system_prompt: str, user_prompt: str) -> GenerationRe
         return GenerationResult(
             predicate_dict=raw_dict,
             accepted=True,
-            reason=f"Accepted on attempt {attempt}.",
+            reason=f"Accepted on attempt {attempt} (backend={backend}).",
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             latency_ms=latency_ms,
@@ -353,7 +421,7 @@ def _generate_and_validate(system_prompt: str, user_prompt: str) -> GenerationRe
         predicate_dict=None,
         accepted=False,
         reason=f"Rejected after {MAX_ATTEMPTS} attempts. Last reason: {last_reason}",
-        prompt_tokens=prompt_tokens,
+        prompt_tokens=last_prompt_tokens,
         completion_tokens=0,
         latency_ms=0.0,
         raw_output="",
@@ -381,18 +449,27 @@ def main() -> None:
 
     ledger = get_ledger()
 
+    config = get_llm_config()
+    backend = config["backend"]
+    model_identity = config["openrouter_model"] if backend == "openrouter" else MODEL_NAME
+
     # GAPS.md item 10: check the cache for every candidate BEFORE deciding
     # whether the model needs loading at all -- if every topic this run
     # would generate for is already cached, the real economic win is
     # skipping the GPU load entirely, not just the per-call generation.
     cache_status = {topic.cluster_id: _lookup_cache(ledger, topic_cache_key(topic, kpi_context)) is not None for topic in candidates}
     n_cached = sum(cache_status.values())
-    if n_cached < len(candidates):
-        print(f"Loading {MODEL_NAME} on {'cuda' if torch.cuda.is_available() else 'cpu'}... ({n_cached}/{len(candidates)} topics already cached)")
-        _load()  # warm up once, outside the per-topic timing loop
-        print("Loaded.\n")
+    if backend == "local":
+        if n_cached < len(candidates):
+            import torch
+
+            print(f"Loading {MODEL_NAME} on {'cuda' if torch.cuda.is_available() else 'cpu'}... ({n_cached}/{len(candidates)} topics already cached)")
+            _load()  # warm up once, outside the per-topic timing loop
+            print("Loaded.\n")
+        else:
+            print(f"All {len(candidates)} topic(s) already cached from a prior run -- skipping model load entirely.\n")
     else:
-        print(f"All {len(candidates)} topic(s) already cached from a prior run -- skipping model load entirely.\n")
+        print(f"Backend: OpenRouter ({model_identity}) -- no local model to load. {n_cached}/{len(candidates)} topics already cached.\n")
 
     results = []
     for topic in candidates:
@@ -405,8 +482,12 @@ def main() -> None:
             print(f"  ACCEPTED: {json.dumps(result.predicate_dict, indent=2)}")
         else:
             print(f"  REJECTED: {result.reason}")
-        cost = estimate_hosted_cost(result.prompt_tokens, result.completion_tokens)
-        print(f"  tokens: {result.prompt_tokens} in / {result.completion_tokens} out, {result.latency_ms:.0f}ms, $0.0000 actual (local GPU) / ~${cost:.4f} if this were a hosted API call{' -- cache hit, no GPU call made this run' if result.cache_hit else ''}\n")
+        if backend == "openrouter":
+            actual_cost = estimate_hosted_cost(result.prompt_tokens, result.completion_tokens)
+            print(f"  tokens: {result.prompt_tokens} in / {result.completion_tokens} out, {result.latency_ms:.0f}ms, ~${actual_cost:.4f} estimated actual cost (OpenRouter, {model_identity}){' -- cache hit, no API call made this run' if result.cache_hit else ''}\n")
+        else:
+            illustrative_cost = estimate_hosted_cost(result.prompt_tokens, result.completion_tokens)
+            print(f"  tokens: {result.prompt_tokens} in / {result.completion_tokens} out, {result.latency_ms:.0f}ms, $0.0000 actual (local GPU) / ~${illustrative_cost:.4f} if this were a hosted API call{' -- cache hit, no GPU call made this run' if result.cache_hit else ''}\n")
 
     accepted = [r for _, r in results if r.accepted]
     n_hits = sum(1 for r in accepted if r.cache_hit)
@@ -441,10 +522,10 @@ def main() -> None:
             run_id,
             f"L4_llm_generate_{result.predicate_dict['hypothesis_id'] if result.accepted else f'cluster_{topic.cluster_id}_rejected'}",
             is_llm_call=not result.cache_hit,  # a cache hit made no LLM call this run -- the telemetry's LLM-vs-deterministic breakdown should say so honestly, not count it as a fresh call
-            model=MODEL_NAME,
+            model=model_identity,
             tokens_in=result.prompt_tokens,
             tokens_out=result.completion_tokens,
-            cost_usd=0.0,  # local GPU compute -- genuinely $0, see estimate_hosted_cost() for the hosted-API comparison printed above
+            cost_usd=(estimate_hosted_cost(result.prompt_tokens, result.completion_tokens) if backend == "openrouter" and not result.cache_hit else 0.0),  # real (estimated) cost for OpenRouter; genuinely $0 for local GPU compute
             override_latency_ms=result.latency_ms,  # generation already happened above; this span exists to log it, not to time it
         ):
             pass
@@ -470,10 +551,10 @@ def main() -> None:
         run_id,
         f"L4_adversarial_{challenge.predicate_dict['hypothesis_id'] if challenge.accepted else 'rejected'}",
         is_llm_call=True,
-        model=MODEL_NAME,
+        model=model_identity,
         tokens_in=challenge.prompt_tokens,
         tokens_out=challenge.completion_tokens,
-        cost_usd=0.0,
+        cost_usd=(estimate_hosted_cost(challenge.prompt_tokens, challenge.completion_tokens) if backend == "openrouter" else 0.0),
         override_latency_ms=challenge.latency_ms,
     ):
         pass
