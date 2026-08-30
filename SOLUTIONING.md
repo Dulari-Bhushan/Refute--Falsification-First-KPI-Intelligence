@@ -85,10 +85,20 @@ already exceeds what the brief asks for.
 
 ## 6. Action recommendations: driver → lever → action → impact → owner → confidence → monitoring
 
-**✅ Exact match, verified in code.** `build_action_recommendation()` in
-[`engine/l6_narrate_ledger.py`](engine/l6_narrate_ledger.py) populates precisely this template from
-real L2/L5 numbers, further qualified against a real operational constraint
-(`check_capacity_constraint()`) when the action doesn't fully fit. Nothing to add.
+**✅ Exact match, verified in code.** `generate_action_recommendation()` in
+[`engine/action_recommendation.py`](engine/action_recommendation.py) populates precisely this
+template — investigation-aware, not hardcoded to West: it gathers whichever investigation's SURVIVED
+verdict(s), L1 context, and real operational-capacity data exist for the surviving hypothesis's
+dimension (`check_capacity_constraint()` for `rep_id` against `crm_headcount.csv`,
+`check_fulfillment_capacity_constraint()` for `fulfillment_center` against the new
+`data/synthetic/fulfillment_center_ops.csv`), then has an LLM synthesize the writeup (or falls back to
+a deterministic composition of the same real evidence with no LLM backend selected). When no
+operational dataset exists yet for a dimension, the response says so explicitly
+(`inferred_without_operational_data`) and caps confidence, rather than fabricating a feasibility
+number. (The older `build_action_recommendation()` in
+[`engine/l6_narrate_ledger.py`](engine/l6_narrate_ledger.py) still exists, used only by the CLI/ledger
+console narration path — the API and dashboard now go through the generic module above.) Nothing to
+add.
 
 ## 7. Human feedback, expert validation, correction workflows, learning loops
 
