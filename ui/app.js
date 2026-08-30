@@ -20,7 +20,7 @@ const INVESTIGATIONS = [
   { region: "West", kpi: "revenue" },
   { region: "Central", kpi: "revenue" },
 ];
-const INVESTIGATION = INVESTIGATIONS[0]; // the "primary" one -- action recommendation, counterfactual capacity math, and the persona brief's role-specific copy only exist for this one
+const INVESTIGATION = INVESTIGATIONS[0]; // the "primary"/default one -- used as a fallback target for "jump to investigation" and live LLM generation, not a gate on which investigations get real content (action recommendations are investigation-aware, see engine/action_recommendation.py)
 function currentInvestigation() {
   return INVESTIGATIONS.find((inv) => inv.region === STATE.region && inv.kpi === STATE.kpi) || null;
 }
@@ -369,7 +369,10 @@ function renderHypothesisCards(templated) {
     card.innerHTML = `
       <div class="card-top">
         <div class="card-title" title="${h.hypothesis_id}">${humanizeIdentifier(h.hypothesis_id)}</div>
-        <div class="verdict-badge ${verdictClass(h.verdict)}">${h.verdict}</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+          ${h.source === "llm_generated" ? `<div class="llm-badge" title="Proposed live by an LLM, then adjudicated through the identical DiD / parallel-trends / power-gate / BH-correction pipeline as every hand-authored hypothesis -- same trust, not more, not less.">LLM-generated</div>` : ""}
+          <div class="verdict-badge ${verdictClass(h.verdict)}">${h.verdict}</div>
+        </div>
       </div>
       <div class="card-archetype">${h.test_archetype} &middot; ${h.region || "West"} · ${humanizeIdentifier(h.kpi || "revenue")}</div>
       ${h.mechanism ? `<div class="card-mechanism">${h.mechanism}</div>` : ""}
@@ -398,20 +401,38 @@ function renderHypothesisCards(templated) {
 }
 
 // ==================================================================== action panel
+// Investigation-aware: engine.action_recommendation.generate_action_recommendation
+// gathers whichever investigation's SURVIVED verdict(s), L1 context, and
+// operational-capacity data (if any exists for that hypothesis's dimension)
+// and synthesizes a recommendation via LLM -- or, with no LLM backend
+// selected, a deterministic composition of the same real evidence. Works
+// for any investigation registered in engine/investigations.py, not just West.
+function renderOperationalContext(c) {
+  if (!c) return "";
+  if (c.type === "rep_capacity") {
+    return `<div class="k">Constraint</div><div style="color:${c.fits_within_capacity ? "var(--survived)" : "var(--inconclusive)"}">
+        ${c.fits_within_capacity
+          ? `Fits within capacity: ${c.accounts_needing_reassignment} accounts needed, ${c.staying_rep_headroom} headroom available.`
+          : `Does NOT fully fit within capacity: ${c.accounts_needing_reassignment} accounts needed vs. ${c.staying_rep_headroom} headroom (ceiling ${c.max_accounts_per_rep_ceiling}/rep) -- ${c.shortfall} accounts short, action qualified accordingly.`}
+      </div>`;
+  }
+  if (c.type === "fulfillment_capacity") {
+    const eta = c.days_to_clear_backlog_with_max_overtime;
+    return `<div class="k">Constraint</div><div style="color:${c.fits_within_target_window ? "var(--survived)" : "var(--inconclusive)"}">
+        ${c.fulfillment_center}: ${c.orders_backlog.toLocaleString()} orders backlog, ${c.daily_incoming_orders}/day incoming vs. ${c.daily_processing_capacity_orders}/day capacity (WMS status: ${c.wms_migration_status}).
+        ${c.fits_within_target_window
+          ? ` With ${c.overtime_boost_pct}% surge capacity, clears within the ${c.backlog_clear_target_days}-day target (est. ${eta} days).`
+          : ` Even at max ${c.overtime_boost_pct}% surge capacity, would NOT clear within ${c.backlog_clear_target_days} days${eta !== null ? ` (est. ${eta} days)` : " -- capacity still below intake"}.`}
+      </div>`;
+  }
+  return "";
+}
+
 function renderAction(data) {
   const el = document.getElementById("actionContent");
   el.classList.remove("loading");
-  // The action-recommendation math (capacity constraints, owner routing)
-  // was only ever built for the PRIMARY (West) investigation -- reusing it
-  // while viewing a different investigation would show the wrong remedy
-  // for the wrong cause, so it's gated to context rather than reused.
-  const inv = currentInvestigation();
-  if (!inv || inv.region !== INVESTIGATION.region || inv.kpi !== INVESTIGATION.kpi) {
-    el.innerHTML = `<div class="subtext">${
-      inv
-        ? `No action recommendation built for ${inv.region} · ${humanizeIdentifier(inv.kpi)} yet -- only the West · Revenue investigation has the capacity-math/owner-routing step wired up so far. Its surviving cause and evidence are still shown above.`
-        : `No investigation is active for ${STATE.region} · ${humanizeIdentifier(STATE.kpi)} -- see the Narrated Brief above.`
-    }</div>`;
+  if (data._noInvestigation) {
+    el.innerHTML = `<div class="subtext">No investigation is active for ${STATE.region} · ${humanizeIdentifier(STATE.kpi)} -- see the Narrated Brief above.</div>`;
     return;
   }
   if (!data.has_action) {
@@ -423,24 +444,32 @@ function renderAction(data) {
     return;
   }
   const a = data.action;
-  const c = a.capacity_constraint;
-  const constraintHtml = c
-    ? `<div class="k">Constraint</div><div style="color:${c.fits_within_capacity ? "var(--survived)" : "var(--inconclusive)"}">
-        ${c.fits_within_capacity
-          ? `Fits within capacity: ${c.accounts_needing_reassignment} accounts needed, ${c.staying_rep_headroom} headroom available.`
-          : `Does NOT fully fit within capacity: ${c.accounts_needing_reassignment} accounts needed vs. ${c.staying_rep_headroom} headroom (ceiling ${c.max_accounts_per_rep_ceiling}/rep) -- ${c.shortfall} accounts short, action qualified accordingly.`}
-      </div>`
+  const meta = data.llm_meta || {};
+  const inferredBadge = a.inferred_without_operational_data
+    ? `<div class="llm-badge" title="No operational capacity dataset exists yet for this hypothesis's dimension -- this action is inferred from the mechanism and statistics alone, not checked against a real feasibility constraint, so confidence is capped accordingly.">Inferred -- no operational data</div>`
     : "";
-  el.innerHTML = `<div class="action-grid">
-    <div class="k">Driver</div><div>${humanizeIdentifier(a.driver)}</div>
-    <div class="k">Lever</div><div>${a.controllable_lever}</div>
-    <div class="k">Action</div><div>${a.action}</div>
-    <div class="k">Expected impact</div><div>${a.expected_impact}</div>
-    <div class="k">Owner</div><div>${a.owner}</div>
-    <div class="k">Confidence</div><div>${a.confidence}</div>
-    <div class="k">Monitoring</div><div>${a.monitoring_plan}</div>
-    ${constraintHtml}
-  </div>`;
+  const backendNote = data.backend === "none"
+    ? `No live LLM backend selected -- this is a raw-evidence composition (real numbers, no LLM synthesis). Switch backends in LLM Settings for a full cause-and-action writeup.`
+    : `Synthesized live by ${meta.model || "the configured LLM"} from the evidence below${meta.cost_usd ? ` (~$${meta.cost_usd.toFixed(4)})` : ""}.`;
+  el.innerHTML = `
+    <div class="card-archetype" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <span>${data.region} &middot; ${humanizeIdentifier(data.kpi)} &middot; ${humanizeIdentifier(data.hypothesis_id)}</span>
+      ${inferredBadge}
+    </div>
+    <p class="subtext" style="margin:6px 0 12px">${backendNote}</p>
+    ${a.root_cause_analysis ? `<p class="card-mechanism" style="margin-bottom:12px">${a.root_cause_analysis}</p>` : ""}
+    <div class="action-grid">
+      <div class="k">Driver</div><div>${humanizeIdentifier(a.driver)}</div>
+      <div class="k">Lever</div><div>${a.controllable_lever}</div>
+      <div class="k">Action</div><div>${a.action}</div>
+      <div class="k">Expected impact</div><div>${a.expected_impact}</div>
+      <div class="k">Owner</div><div>${a.owner}</div>
+      <div class="k">Confidence</div><div>${a.confidence}</div>
+      <div class="k">Monitoring</div><div>${a.monitoring_plan}</div>
+      ${renderOperationalContext(data.operational_context)}
+    </div>
+    ${a.data_sources_used && a.data_sources_used.length ? `<div class="subtext" style="margin-top:10px">Data sources used: ${a.data_sources_used.join(", ")}</div>` : ""}
+  `;
 }
 
 // ==================================================================== priority queue
@@ -580,16 +609,12 @@ async function renderBrief(role) {
   const survived = invHypotheses.find((h) => h.verdict === "SURVIVED");
   const killed = invHypotheses.filter((h) => h.verdict === "KILLED");
   const inconclusive = invHypotheses.filter((h) => h.verdict === "INCONCLUSIVE");
-  // The action recommendation, capacity-constraint math, and counterfactual
-  // baseline were only ever built for the PRIMARY (West) investigation --
-  // showing West's "reassign accounts" action while viewing Central's
-  // fulfillment-delay investigation would be actively wrong, not just
-  // incomplete, so it's gated off rather than reused.
-  const isPrimary = inv.region === INVESTIGATION.region && inv.kpi === INVESTIGATION.kpi;
-  const actionAvailable = isPrimary && STATE.action && STATE.action.has_action;
-  const noActionNote = !isPrimary
-    ? `<div class="brief-line"><span class="brief-label">Action</span><div class="subtext">Not yet built for this investigation -- the action-recommendation step (capacity math, owner routing) only exists for the West · Revenue case so far.</div></div>`
-    : "";
+  // STATE.action is fetched per-investigation (see loadKpiPanel) and
+  // reflects whichever region/kpi is currently active -- see
+  // engine/action_recommendation.py for the generic evidence-gathering +
+  // LLM-synthesis pipeline behind it.
+  const actionAvailable = STATE.action && STATE.action.region === inv.region && STATE.action.kpi === inv.kpi && STATE.action.has_action;
+  const noActionNote = `<div class="brief-line"><span class="brief-label">Action</span><div class="subtext">No hypothesis has survived falsification for this investigation yet -- see the Hypotheses Tested cards above.</div></div>`;
 
   const ent = await getJSON(`/api/entitlement-check?role=${role}&dim=rep_id&region=${STATE.region}`);
 
@@ -862,8 +887,22 @@ async function loadKpiPanel(region, kpi) {
 
   // keep dependent panels in sync with the new context
   if (STATE._initialized) {
+    // Investigation-aware: re-fetch the action recommendation for WHICHEVER
+    // investigation is now active, rather than reusing whatever was loaded
+    // for the previous one -- a real recommendation exists per-investigation
+    // (see engine/action_recommendation.py), it just needs to be re-asked for.
+    // Awaited BEFORE renderBrief so the brief's "Next step"/"Action" lines
+    // (which read STATE.action) never render against the PREVIOUS
+    // investigation's stale data while this one's fetch is still in flight.
+    const inv = currentInvestigation();
+    document.getElementById("actionContent").classList.add("loading");
+    if (inv) {
+      STATE.action = await getJSON(`/api/action-recommendation?region=${inv.region}`);
+    } else {
+      STATE.action = null;
+    }
+    renderAction(STATE.action || { _noInvestigation: true });
     renderBrief(STATE.role);
-    if (STATE.action) renderAction(STATE.action);
     getJSON("/api/priorities").then(renderPriorities);
     document.querySelectorAll(".overview-card").forEach((c) => {
       c.classList.toggle("active", c.dataset.kpi === kpi && c.dataset.region === region);
@@ -890,17 +929,47 @@ function kgNodeColorVar(node) {
 let KG_STATE = { nodes: {} };
 let LAST_GRAPH_DATA = null;
 let kgSim = null, kgSvg = null, kgZoom = null, kgNodeSel = null, kgLinkSel = null, kgLabelSel = null, kgG = null;
+let kgNeighborMap = {}; // node id -> Set of directly-connected node ids, built once per graph load
+let kgHighlightedId = null; // the currently click-selected node, or null when nothing is highlighted
+
+function kgLinkTouches(link, id) {
+  return (link.source.id ?? link.source) === id || (link.target.id ?? link.target) === id;
+}
+
+// Dims everything except the clicked node, its direct neighbors, and the
+// edges between them -- so "what is this connected to" is answerable at a
+// glance instead of requiring a trip to the query-result table below.
+function highlightKgNode(id) {
+  const active = new Set([id, ...(kgNeighborMap[id] || [])]);
+  kgNodeSel
+    .attr("opacity", (d) => (active.has(d.id) ? 1 : 0.12))
+    .attr("stroke-width", (d) => (d.id === id ? 3 : 1.5))
+    .attr("stroke", (d) => (d.id === id ? cssVar("--accent") : cssVar("--panel")));
+  kgLabelSel.attr("opacity", (d) => (active.has(d.id) ? 1 : 0.12));
+  kgLinkSel
+    .attr("stroke", (l) => (kgLinkTouches(l, id) ? cssVar("--accent") : cssVar("--border")))
+    .attr("stroke-width", (l) => (kgLinkTouches(l, id) ? 2 : 1))
+    .attr("opacity", (l) => (kgLinkTouches(l, id) ? 1 : 0.12));
+}
+
+function clearKgHighlight() {
+  kgNodeSel.attr("opacity", 1).attr("stroke-width", 1.5).attr("stroke", cssVar("--panel"));
+  kgLabelSel.attr("opacity", 1);
+  kgLinkSel.attr("stroke", cssVar("--border")).attr("stroke-width", 1).attr("opacity", 1);
+}
 
 function recolorGraph() {
   if (!kgNodeSel) return;
   kgNodeSel.attr("fill", (d) => cssVar(kgNodeColorVar(d)));
-  kgLinkSel.attr("stroke", cssVar("--border"));
   kgLabelSel.attr("fill", cssVar("--text-dim"));
+  if (kgHighlightedId) highlightKgNode(kgHighlightedId);
+  else clearKgHighlight();
 }
 
 function initKnowledgeGraphDiagram(graph) {
   LAST_GRAPH_DATA = graph;
   KG_STATE = { nodes: Object.fromEntries(graph.nodes.map((n) => [n.id, n])) };
+  kgHighlightedId = null;
 
   const wrap = document.querySelector(".kg-canvas-wrap");
   const width = wrap.clientWidth || 900;
@@ -912,6 +981,14 @@ function initKnowledgeGraphDiagram(graph) {
 
   const nodes = graph.nodes.map((n) => ({ ...n }));
   const links = graph.edges.map((e) => ({ ...e, source: e.source, target: e.target }));
+
+  // built from the raw string source/target ids, before d3's link force
+  // rewrites them into node object references on the first tick.
+  kgNeighborMap = {};
+  links.forEach((l) => {
+    (kgNeighborMap[l.source] = kgNeighborMap[l.source] || new Set()).add(l.target);
+    (kgNeighborMap[l.target] = kgNeighborMap[l.target] || new Set()).add(l.source);
+  });
 
   kgLinkSel = kgG.append("g").selectAll("line").data(links).join("line")
     .attr("stroke", cssVar("--border")).attr("stroke-width", 1);
@@ -935,11 +1012,25 @@ function initKnowledgeGraphDiagram(graph) {
     .text((d) => (d.label.length > 20 ? d.label.slice(0, 19) + "…" : d.label));
 
   nodeGroup.on("click", (event, d) => {
+    event.stopPropagation();
     document.getElementById("kgNodeSelect").value = d.id;
     kgQueryRelated(d.id);
-    nodeGroup.select("circle").attr("stroke-width", (n) => (n.id === d.id ? 3 : 1.5)).attr("stroke", (n) => (n.id === d.id ? cssVar("--accent") : cssVar("--panel")));
+    // click the already-highlighted node again to clear the highlight and see the full graph
+    if (kgHighlightedId === d.id) {
+      kgHighlightedId = null;
+      clearKgHighlight();
+    } else {
+      kgHighlightedId = d.id;
+      highlightKgNode(d.id);
+    }
   });
   nodeGroup.append("title").text((d) => `${d.type}: ${d.label}`);
+  svgEl.on("click", () => {
+    if (kgHighlightedId) {
+      kgHighlightedId = null;
+      clearKgHighlight();
+    }
+  });
 
   kgSim = d3.forceSimulation(nodes)
     .force("link", d3.forceLink(links).id((d) => d.id).distance(70).strength(0.5))

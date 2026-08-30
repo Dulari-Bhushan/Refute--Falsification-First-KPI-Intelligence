@@ -31,9 +31,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from engine.action_recommendation import generate_action_recommendation
 from engine.l4_compiler import EntitlementDenied, check_domain_entitlement, check_entitlement
-from engine.l5_adjudicate import adjudicate_all
-from engine.l6_narrate_ledger import build_action_recommendation, build_counterfactual_projection, detect_contradictory_verdicts, determine_delivery_channel, get_ledger, record_entitlement_check, submit_feedback
+from engine.l6_narrate_ledger import build_counterfactual_projection, detect_contradictory_verdicts, determine_delivery_channel, get_ledger, record_entitlement_check, submit_feedback
 from engine.methods_registry import REGISTRY, assert_llm_not_quantitative_source
 from engine.calibration import run_calibration_demo
 from engine.drift_monitor import assess_drift, run_drift_demo
@@ -184,13 +184,16 @@ def evidence():
 
 
 @app.get("/api/action-recommendation")
-def action_recommendation():
-    l2 = _read_json("l2_localisation_results.json")
-    outcomes = adjudicate_all()
-    survived = next((o for o in outcomes if o.verdict == "SURVIVED"), None)
-    if survived is None:
-        return {"has_action": False}
-    return {"has_action": True, "hypothesis_id": survived.hypothesis_id, "action": build_action_recommendation(l2, survived, _contract())}
+def action_recommendation(region: str = "West"):
+    """Investigation-aware: builds the recommendation from WHICHEVER
+    region's investigation is passed, not hardcoded to West -- see
+    engine.action_recommendation.generate_action_recommendation for the
+    real evidence-gathering + LLM-synthesis (or honest fallback) pipeline."""
+    from engine.investigations import INVESTIGATIONS
+
+    if region not in INVESTIGATIONS:
+        raise HTTPException(400, f"Unknown investigation region '{region}', must be one of {sorted(INVESTIGATIONS)}.")
+    return generate_action_recommendation(region)
 
 
 @app.get("/api/telemetry")
@@ -278,16 +281,18 @@ def entitlement_log(limit: int = 50):
 
 
 @app.get("/api/delivery-channel")
-def delivery_channel(role: str):
+def delivery_channel(role: str, region: str = "West"):
     """GAPS.md item 7: which channel this role's brief would actually route
     through right now, computed from the real current action-recommendation
-    state (engine.l6_narrate_ledger.determine_delivery_channel) -- not a
+    state for WHICHEVER investigation `region` names (see
+    engine.action_recommendation.generate_action_recommendation) -- not a
     fixed lookup, an urgency-gated decision. See /api/delivery-log for the
     persisted SIMULATED delivery records a real pipeline run writes."""
-    l2 = _read_json("l2_localisation_results.json")
-    outcomes = adjudicate_all()
-    survived = next((o for o in outcomes if o.verdict == "SURVIVED"), None)
-    action_wrapped = {"has_action": survived is not None, "action": build_action_recommendation(l2, survived, _contract()) if survived else None}
+    from engine.investigations import INVESTIGATIONS
+
+    if region not in INVESTIGATIONS:
+        raise HTTPException(400, f"Unknown investigation region '{region}', must be one of {sorted(INVESTIGATIONS)}.")
+    action_wrapped = generate_action_recommendation(region)
     return determine_delivery_channel(role, action_wrapped, _contract())
 
 

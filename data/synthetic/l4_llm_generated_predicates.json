@@ -9,12 +9,41 @@
       "shipping cutoffs",
       "upcoming"
     ],
-    "accepted": false,
-    "predicate": null,
-    "reason": "No-model mode selected -- by design, no LLM call is made. Only the templated/rule-based fixture path runs.",
-    "prompt_tokens": 0,
-    "completion_tokens": 0,
-    "latency_ms": 0.0,
+    "accepted": true,
+    "predicate": {
+      "hypothesis_id": "h_shipping_cutoffs",
+      "mechanism": "Increased customer inquiries about holiday shipping cutoffs led to a reduction in purchases in the region Central.",
+      "test_archetype": "placebo",
+      "treatment": {
+        "dim": "fulfillment_center",
+        "in": [
+          "CENTRAL_DC"
+        ]
+      },
+      "control": {
+        "dim": "fulfillment_center",
+        "in": [
+          "WEST_DC",
+          "EAST_DC"
+        ]
+      },
+      "outcome": {
+        "metric": "revenue",
+        "expect": "decline"
+      },
+      "temporal": {
+        "cause_onset": "2023-09-04",
+        "kpi_onset": "2023-09-11"
+      },
+      "refutes_if": {
+        "condition": "The revenue in the Central_DC fulfillment center does not decline or remains stable while revenue from WEST_DC and EAST_DC increases during the same period.",
+        "rationale": "If revenue in Central_DC does not decline while others increase, it indicates that the inquiries about shipping cutoffs did not impact purchasing behavior specifically in Central_DC, thus disproving the causal mechanism suggested."
+      }
+    },
+    "reason": "Accepted on attempt 1 (backend=openrouter).",
+    "prompt_tokens": 563,
+    "completion_tokens": 254,
+    "latency_ms": 2759.2358998954296,
     "cache_hit": false
   },
   {
@@ -27,12 +56,41 @@
       "fulfillment",
       "flagged"
     ],
-    "accepted": false,
-    "predicate": null,
-    "reason": "No-model mode selected -- by design, no LLM call is made. Only the templated/rule-based fixture path runs.",
-    "prompt_tokens": 0,
-    "completion_tokens": 0,
-    "latency_ms": 0.0,
+    "accepted": true,
+    "predicate": {
+      "hypothesis_id": "h_shipping_delay",
+      "mechanism": "Delays in order fulfillment from CENTRAL_DC are causing a decline in revenue for the Central region.",
+      "test_archetype": "placebo",
+      "treatment": {
+        "dim": "fulfillment_center",
+        "in": [
+          "CENTRAL_DC"
+        ]
+      },
+      "control": {
+        "dim": "fulfillment_center",
+        "in": [
+          "WEST_DC",
+          "EAST_DC"
+        ]
+      },
+      "outcome": {
+        "metric": "revenue",
+        "expect": "decline"
+      },
+      "temporal": {
+        "cause_onset": "2023-08-21",
+        "kpi_onset": "2023-09-11"
+      },
+      "refutes_if": {
+        "condition": "Revenue in regions served by WEST_DC and EAST_DC also shows a significant decline following week 34.",
+        "rationale": "If regions with unaffected fulfillment centers experience similar revenue declines, it suggests that the cause is not specific to delays from CENTRAL_DC."
+      }
+    },
+    "reason": "Accepted on attempt 1 (backend=openrouter).",
+    "prompt_tokens": 568,
+    "completion_tokens": 230,
+    "latency_ms": 2796.0959000047296,
     "cache_hit": false
   }
 ]

@@ -443,6 +443,54 @@ def estimate_hosted_cost(prompt_tokens: int, completion_tokens: int) -> float:
     return (prompt_tokens / 1000) * HOSTED_API_COST_PER_1K_INPUT_TOKENS + (completion_tokens / 1000) * HOSTED_API_COST_PER_1K_OUTPUT_TOKENS
 
 
+def _persist_llm_verdicts(outcomes: list, region: str, kpi: str) -> None:
+    """Live-generated predicates get genuinely adjudicated through L5
+    (see main()) but that alone only writes ledger telemetry -- the
+    frontend's main hypothesis grid and Narrated Brief read exclusively
+    from data/synthetic/l5_verdicts.json (see /api/hypotheses), so a
+    verdict that never lands there is real but invisible and forgotten the
+    next time the dashboard reloads. This appends into that file the same
+    way data/add_central_investigation.py merges Central's verdicts in:
+    read existing, tag, append, write back. Tagged with source="llm_generated"
+    -- not to distrust it (it went through the identical DiD/parallel-trends/
+    power-gate/BH-correction pipeline as every hand-authored fixture) but so
+    the UI can be transparent about provenance without granting or
+    withholding trust based on it.
+
+    hypothesis_id collisions are real (an OpenRouter-generated predicate
+    once independently proposed "h_shipping_delay", the same id as an
+    existing hand-authored West decoy) -- rather than silently overwrite or
+    reject the whole run, a colliding id is suffixed to the next free
+    "<id>_llm2", "<id>_llm3", ... and the rename is logged in the verdict's
+    own notes so it's auditable, not hidden.
+    """
+    if not outcomes:
+        return
+    verdicts_path = DATA_DIR / "l5_verdicts.json"
+    existing = json.loads(verdicts_path.read_text()) if verdicts_path.exists() else []
+    existing_ids = {e["hypothesis_id"] for e in existing}
+
+    new_entries = []
+    for o in outcomes:
+        o.region = region
+        o.kpi = kpi
+        o.source = "llm_generated"
+        if o.hypothesis_id in existing_ids:
+            original_id = o.hypothesis_id
+            suffix = 2
+            candidate = f"{original_id}_llm{suffix}"
+            while candidate in existing_ids:
+                suffix += 1
+                candidate = f"{original_id}_llm{suffix}"
+            o.notes.append(f"hypothesis_id renamed from '{original_id}' to '{candidate}' -- collided with an existing verdict already in l5_verdicts.json.")
+            o.hypothesis_id = candidate
+        existing_ids.add(o.hypothesis_id)
+        new_entries.append(o.__dict__)
+
+    verdicts_path.write_text(json.dumps(existing + new_entries, indent=2))
+    print(f"\nPersisted {len(new_entries)} live-generated verdict(s) into l5_verdicts.json (region={region}, kpi={kpi}).")
+
+
 def main(region: str = "West") -> None:
     # local import: avoids a module-load-time dependency on engine/l4_compiler.py
     # (engine/investigations.py's own reason for lazy-importing it applies here too)
@@ -541,6 +589,7 @@ def main(region: str = "West") -> None:
     from engine.l6_narrate_ledger import telemetry_span, write_ledger_entries
 
     run_id = f"llm-{int(time.time())}"
+    llm_outcomes_to_persist = []
     print("\n=== Adjudicating LLM-generated predicates through L5 (identical pipeline to the templated fixtures) ===")
     for topic, result in results:
         with telemetry_span(
@@ -563,6 +612,7 @@ def main(region: str = "West") -> None:
             print(f"  {result.predicate_dict['hypothesis_id']}: could not be adjudicated (panel could not be built).")
             continue
         write_ledger_entries(ledger, run_id, outcomes)
+        llm_outcomes_to_persist.extend(outcomes)
         for o in outcomes:
             print(f"  {o.hypothesis_id:<32} [{o.verdict:<12}] {o.reason}")
 
@@ -590,6 +640,7 @@ def main(region: str = "West") -> None:
         challenge_outcomes = adjudicate_all(role=inv["role"], region=region, predicates=[challenge.predicate_dict], windows=inv["windows"])
         if challenge_outcomes:
             write_ledger_entries(ledger, run_id, challenge_outcomes)
+            llm_outcomes_to_persist.extend(challenge_outcomes)
             for o in challenge_outcomes:
                 verdict_meaning = (
                     "the original conclusion is more contested than a single surviving test suggested -- review both."
@@ -598,6 +649,8 @@ def main(region: str = "West") -> None:
                 )
                 print(f"  {o.hypothesis_id:<32} [{o.verdict:<12}] {o.reason}")
                 print(f"    -> {verdict_meaning}")
+
+    _persist_llm_verdicts(llm_outcomes_to_persist, region=region, kpi=kpi)
 
     ledger.close()
 

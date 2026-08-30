@@ -159,6 +159,14 @@ operational_constraints:
     value: 20
     rationale: "A conventional B2B account-management capacity benchmark -- a rep juggling meaningfully more than this stops being able to give each account real attention. Used as the ceiling when checking whether existing staff can absorb a departed rep's book without escalation."
     applies_to: rep_attributed_revenue
+  max_overtime_capacity_boost_pct:
+    value: 20
+    rationale: "A conventional short-term overtime/temp-labor surge ceiling for a fulfillment operation -- pushing a center meaningfully past this for more than a couple of weeks isn't sustainable (burnout, error-rate). Used as the ceiling when checking whether a fulfillment center's backlog can be cleared within a target window via surge capacity, the fulfillment-dimension equivalent of max_accounts_per_rep. Read against fulfillment_center_ops.csv by engine/action_recommendation.py's check_fulfillment_capacity_constraint()."
+    applies_to: fulfillment_center
+  backlog_clear_target_days:
+    value: 14
+    rationale: "Two weeks -- the same order of magnitude as the 'same-week vs phased' framing already used for rep reassignment. A backlog that can't clear within this window under surge capacity is escalated, not silently promised as a same-cycle fix."
+    applies_to: fulfillment_center
 
 # Roles referenced by the L4 entitlement compiler (see engine/l4_compiler.py).
 # Row-level: region scope. Column-level: rep-level detail visibility.
