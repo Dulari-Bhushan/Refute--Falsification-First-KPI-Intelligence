@@ -220,6 +220,7 @@
       <div style="display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap">
         <button class="action-btn" id="saveLlmConfigBtn" type="button">Save settings</button>
         <button class="action-btn ghost" id="runLlmGenerationBtn" type="button">Run live LLM generation now</button>
+        <button class="action-btn ghost" id="clearLlmCacheBtn" type="button" title="Forces the next run to make genuinely fresh calls instead of replaying cached predicates -- click this right before a live demo.">Clear generation cache</button>
         <span class="subtext" id="llmConfigStatus"></span>
       </div>
       <div id="llmGenerationResult" style="margin-top:14px"></div>
@@ -300,6 +301,6 @@
 </main>
 </div>
 
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>
