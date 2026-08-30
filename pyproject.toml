@@ -19,6 +19,7 @@ dependencies = [
     "triton-windows>=3.7.1.post27",
     "fastapi>=0.141.1",
     "uvicorn[standard]>=0.52.4",
+    "httpx>=0.28.1",
 ]
 
 # Pin torch to the CUDA 12.8 wheel index permanently -- without this, `uv

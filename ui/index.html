@@ -4,30 +4,64 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>REFUTE -- KPI Intelligence Demo</title>
-<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="style.css?v=5" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 </head>
 <body>
 
-<header>
-  <h1>REFUTE <span>falsification-first KPI intelligence</span></h1>
-  <div class="tagline">Every automated root-cause tool ranks hypotheses by supporting evidence. This one generates the test that would kill each hypothesis, runs it, and publishes the result.</div>
-</header>
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">R</div>
+    <div class="brand-text">
+      <h1>REFUTE <span>falsification-first KPI intelligence</span></h1>
+      <div class="tagline">Generates the test that would kill each hypothesis, runs it, publishes only what survives.</div>
+    </div>
+  </div>
+  <div class="topbar-controls">
+    <div class="control-group">
+      <span class="control-label">Region</span>
+      <select id="regionSelect">
+        <option value="West">West</option>
+        <option value="East">East</option>
+        <option value="Central">Central</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <span class="control-label">KPI</span>
+      <select id="kpiSelect">
+        <option value="revenue">Revenue</option>
+        <option value="units_sold">Units sold</option>
+        <option value="marketing_attributed_revenue_share">Marketing-attributed share</option>
+      </select>
+    </div>
+    <button class="icon-btn" id="themeToggle" title="Toggle light / dark theme">
+      <svg id="themeIconDark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      <svg id="themeIconLight" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="5"></circle><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path></svg>
+    </button>
+  </div>
+</div>
 
 <main>
 
   <div class="grid-2">
     <div class="panel">
-      <h2>West Revenue &mdash; Week 32</h2>
+      <div class="hero-top">
+        <div>
+          <div class="hero-title" id="kpiTitle">Revenue</div>
+        </div>
+      </div>
       <div class="headline">
         <div class="value" id="kpiValue">&mdash;</div>
-        <div class="badge pass" id="kpiBadge">&mdash;</div>
+        <div class="badge" id="kpiBadge">&mdash;</div>
       </div>
       <div class="subtext" id="kpiNarrative">Loading&hellip;</div>
-      <canvas id="kpiChart"></canvas>
+      <div class="chart-wrap"><canvas id="kpiChart"></canvas></div>
     </div>
 
     <div class="panel">
       <h2>Narrated Brief &mdash; Three Stakeholder Views</h2>
+      <div class="investigation-tag" id="investigationTag">Investigation: &mdash;</div>
       <div class="persona-tabs">
         <button class="persona-tab active" data-role="regional_vp">Leader</button>
         <button class="persona-tab" data-role="ops_manager_west">Manager</button>
@@ -38,27 +72,38 @@
     </div>
   </div>
 
-  <div class="panel">
-    <h2>Priority Queue &mdash; What To Investigate First</h2>
-    <p class="subtext">Objective 1's second half: detecting a material movement isn't the same as knowing which one to look at first when several clear the gate at once. Ranked by business-impact magnitude &times; statistical confidence; movements sharing a region and a nearby onset week are flagged as probably the same underlying event, not three separate problems.</p>
-    <div id="priorityQueue" class="loading">Loading&hellip;</div>
-  </div>
+  <section class="block">
+    <div class="block-head">
+      <h2><span class="dot"></span>All Movements &mdash; Every KPI &times; Region L1 Was Run Against</h2>
+    </div>
+    <p class="block-desc">Detecting a real signal isn't the same as only looking where you already expect one. Every card below is a genuine BOCPD result for that KPI/region pair -- most stay noise (no LLM call, no further layers run for them). Click any card to load it into the chart above.</p>
+    <div class="panel">
+      <div class="overview-grid" id="overviewGrid"><div class="loading">Loading&hellip;</div></div>
+    </div>
+  </section>
 
-  <div class="panel" id="contradictionPanel" style="display:none">
-    <h2>Contradictory Evidence Check</h2>
-    <div id="contradictionContent"></div>
-  </div>
+  <section class="block">
+    <div class="block-head"><h2><span class="dot"></span>Priority Queue &mdash; What To Investigate First</h2></div>
+    <p class="block-desc">Detection isn't the same as knowing which one to look at first when several clear the gate at once. Ranked by business-impact magnitude &times; statistical confidence; movements sharing a region and a nearby onset week are flagged as probably the same underlying event.</p>
+    <div class="panel"><div id="priorityQueue" class="loading">Loading&hellip;</div></div>
+  </section>
 
-  <div class="panel">
-    <h2>Hypotheses Tested (click a card for evidence)</h2>
+  <section class="block" id="contradictionSection" style="display:none">
+    <div class="block-head"><h2><span class="dot"></span>Contradictory Evidence Check</h2></div>
+    <div class="panel"><div id="contradictionContent"></div></div>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2><span class="dot"></span>Hypotheses Tested</h2></div>
+    <p class="block-desc">Click a card for the full statistical evidence, including the exact auditable SQL each verdict was computed from.</p>
     <div class="cards" id="hypothesisCards"><div class="loading">Loading&hellip;</div></div>
-  </div>
+  </section>
 
-  <div class="panel" id="adversarialPanel" style="display:none">
-    <h2>Adversarial Challenge (Tier 3 stretch feature)</h2>
-    <p class="subtext">Before trusting the SURVIVED verdict, the model was asked to argue the other side: propose the strongest counter-explanation it could construct, using a different dimension, and that challenge was run through the identical L4/L5 pipeline too.</p>
-    <div id="adversarialContent" class="loading">Loading&hellip;</div>
-  </div>
+  <section class="block" id="adversarialSection" style="display:none">
+    <div class="block-head"><h2><span class="dot"></span>Adversarial Challenge <span class="subtext small">(Tier 3 stretch feature)</span></h2></div>
+    <p class="block-desc">Before trusting the SURVIVED verdict, the model was asked to argue the other side: propose the strongest counter-explanation it could construct, using a different dimension, run through the identical L4/L5 pipeline.</p>
+    <div class="panel"><div id="adversarialContent" class="loading">Loading&hellip;</div></div>
+  </section>
 
   <div class="grid-2">
     <div class="panel" id="actionPanel">
@@ -67,9 +112,9 @@
     </div>
 
     <div class="panel">
-      <h2>Counterfactual Projection (Tier 3 stretch feature)</h2>
+      <h2>Counterfactual Projection <span class="subtext small">(Tier 3 stretch feature)</span></h2>
       <p class="subtext" id="counterfactualAssumption"></p>
-      <canvas id="counterfactualChart"></canvas>
+      <div class="chart-wrap short"><canvas id="counterfactualChart"></canvas></div>
     </div>
   </div>
 
@@ -85,70 +130,127 @@
     </div>
   </div>
 
-  <div class="panel">
-    <h2>Methods Breakdown &mdash; Why Each Layer Uses What It Uses</h2>
-    <p class="subtext">"The LLM should not be treated as the source of quantitative truth." Every pipeline stage declares its own method category here &mdash; imported directly from the code (<code>engine/methods_registry.py</code>), not restated, and structurally checked so no LLM-driven stage is ever marked as a quantitative source of truth.</p>
-    <div id="methodsBreakdown" class="loading">Loading&hellip;</div>
-  </div>
+  <section class="block">
+    <div class="block-head"><h2><span class="dot"></span>Methods Breakdown &mdash; Why Each Layer Uses What It Uses</h2></div>
+    <p class="block-desc">"The LLM should not be treated as the source of quantitative truth." Every stage declares its own method category here -- imported directly from <code>engine/methods_registry.py</code>, structurally checked so no LLM-driven stage is ever marked a quantitative source of truth.</p>
+    <div class="panel"><div id="methodsBreakdown" class="loading">Loading&hellip;</div></div>
+  </section>
 
-  <div class="panel">
-    <h2>Feedback Loop Demo</h2>
-    <p class="subtext">An analyst is skeptical of the SURVIVED verdict on <code>h_rep_attrition</code> ("feels like general demand softness, not attrition"). Submitting this doesn't just log the objection &mdash; it's re-expressed as its own falsifiable predicate and run through the identical L4/L5 pipeline.</p>
-    <button class="action-btn" id="feedbackBtn">Submit skeptical re-check</button>
-    <div class="feedback-result" id="feedbackResult"></div>
-  </div>
+  <section class="block">
+    <div class="block-head"><h2><span class="dot"></span>Live LLM Predicate Generation &mdash; Backend Settings</h2></div>
+    <p class="block-desc">Choose what generates a candidate hypothesis's mechanism + treatment/control predicate when you run live generation: a local GPU model (default, $0, no key, no network) or a hosted model via OpenRouter (real per-call cost, needs your own key). Neither backend is trusted more than the other -- both go through the identical schema + semantic-domain validation gates before anything gets tested.</p>
+    <div class="panel">
+      <div class="llm-backend-choice">
+        <label class="llm-radio">
+          <input type="radio" name="llmBackend" value="local" checked />
+          <div>
+            <div class="lr-title">Local GPU</div>
+            <div class="lr-sub">Qwen2.5-3B-Instruct &middot; $0 &middot; no API key &middot; needs CUDA</div>
+          </div>
+        </label>
+        <label class="llm-radio">
+          <input type="radio" name="llmBackend" value="openrouter" />
+          <div>
+            <div class="lr-title">OpenRouter</div>
+            <div class="lr-sub">Hosted model &middot; real per-call cost &middot; needs an API key &middot; no GPU required</div>
+          </div>
+        </label>
+      </div>
 
-  <div class="panel">
-    <h2>Calibration Mechanism (Objective 7) &mdash; <span style="color:var(--inconclusive)">Simulated Backtest</span></h2>
-    <p class="subtext" id="calibrationHonesty"></p>
-    <div id="calibrationContent" class="loading">Loading&hellip;</div>
-  </div>
+      <div id="openrouterFields" style="display:none;margin-top:16px">
+        <div class="control-group" style="margin-bottom:10px">
+          <span class="control-label" style="min-width:80px">Model</span>
+          <input type="text" id="openrouterModelInput" placeholder="openai/gpt-4o-mini" style="flex:1;min-width:220px" />
+        </div>
+        <div class="control-group" id="openrouterKeyRow">
+          <span class="control-label" style="min-width:80px">API key</span>
+          <input type="password" id="openrouterKeyInput" placeholder="sk-or-..." style="flex:1;min-width:220px" autocomplete="off" />
+        </div>
+        <p class="subtext small" style="margin-top:6px">Stored locally on this machine only (a gitignored config file), never sent anywhere except OpenRouter's API, and never echoed back to this page once saved.</p>
+      </div>
 
-  <div class="panel">
-    <h2>Model/Data Drift Monitoring</h2>
-    <p class="subtext" id="driftHonesty"></p>
-    <div id="driftContent" class="loading">Loading&hellip;</div>
-  </div>
-
-  <div class="panel">
-    <h2>Domain-Level Security Check</h2>
-    <p class="subtext">Distinct from row (region) and column (rep-detail) scope above: this denies a whole KPI outright, aggregate or not, regardless of region or dimension &mdash; a real access-control decision (<code>engine.l4_compiler.check_domain_entitlement</code>).</p>
-    <div id="domainCheckContent" class="loading">Loading&hellip;</div>
-  </div>
-
-  <div class="panel">
-    <h2>Entitlement Audit Log</h2>
-    <p class="subtext">Every row/column and domain-level decision anywhere &mdash; a real pipeline run's compile-time checks, or every persona-tab switch and domain-check above &mdash; persisted here, newest first. "What evidence supports a verdict" was already auditable; this is "who tried to access what and was denied."</p>
-    <div id="entitlementLogContent" class="loading">Loading&hellip;</div>
-  </div>
-
-  <div class="panel">
-    <h2>Delivery-Channel Routing &mdash; <span style="color:var(--inconclusive)">Simulated</span></h2>
-    <p class="subtext">No real Slack/email API is ever called &mdash; REFUTE has no such credentials, and pretending otherwise would be exactly the kind of dishonest placeholder this project rejects elsewhere. What's real: the routing decision itself, urgency-gated on this run's actual confirmed-action state, not a fixed lookup.</p>
-    <div id="deliveryLogContent" class="loading">Loading&hellip;</div>
-  </div>
-
-  <div class="panel">
-    <h2>Knowledge Graph</h2>
-    <p class="subtext">A real, queryable structure over the semantic contract's own declared relationships (KPI&rarr;source, KPI&rarr;domain, role&rarr;domain, dimension&rarr;table) plus this run's actual verdicts &mdash; not new facts, a structure over facts that already existed as flat YAML.</p>
-    <div id="graphDiagram" class="loading">Loading&hellip;</div>
-    <div class="kg-explore" style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <select id="kgNodeSelect" style="flex:1;min-width:200px"></select>
-      <button class="action-btn" id="kgRelatedBtn" type="button">Show connections</button>
-      <button class="action-btn" id="kgBlastBtn" type="button">Blast radius (2 hops)</button>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap">
+        <button class="action-btn" id="saveLlmConfigBtn" type="button">Save settings</button>
+        <button class="action-btn ghost" id="runLlmGenerationBtn" type="button">Run live LLM generation now</button>
+        <span class="subtext" id="llmConfigStatus"></span>
+      </div>
+      <div id="llmGenerationResult" style="margin-top:14px"></div>
     </div>
-    <div id="kgQueryResult" style="margin-top:10px"></div>
-    <div id="kgSharedMechanism" style="margin-top:14px"></div>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2><span class="dot"></span>Feedback Loop Demo</h2></div>
+    <p class="block-desc">An analyst is skeptical of the SURVIVED verdict on <code>h_rep_attrition</code> ("feels like general demand softness, not attrition"). Submitting this re-expresses it as its own falsifiable predicate and runs it through the identical L4/L5 pipeline.</p>
+    <div class="panel">
+      <button class="action-btn" id="feedbackBtn">Submit skeptical re-check</button>
+      <div class="feedback-result" id="feedbackResult"></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2><span class="dot"></span>Calibration Mechanism <span class="subtext small" style="color:var(--inconclusive)">Simulated backtest</span></h2></div>
+    <p class="block-desc" id="calibrationHonesty"></p>
+    <div class="panel"><div id="calibrationContent" class="loading">Loading&hellip;</div></div>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2><span class="dot"></span>Model / Data Drift Monitoring</h2></div>
+    <p class="block-desc" id="driftHonesty"></p>
+    <div class="panel"><div id="driftContent" class="loading">Loading&hellip;</div></div>
+  </section>
+
+  <div class="grid-2">
+    <div class="panel">
+      <h2>Domain-Level Security Check</h2>
+      <p class="subtext" style="margin-top:-8px;margin-bottom:12px">Denies a whole KPI outright, aggregate or not, regardless of region or dimension -- <code>engine.l4_compiler.check_domain_entitlement</code>.</p>
+      <div id="domainCheckContent" class="loading">Loading&hellip;</div>
+    </div>
+    <div class="panel">
+      <h2>Delivery-Channel Routing <span class="subtext small" style="color:var(--inconclusive)">Simulated</span></h2>
+      <p class="subtext" style="margin-top:-8px;margin-bottom:12px">No real Slack/email API is ever called. What's real: the routing decision itself, urgency-gated on this run's actual confirmed-action state.</p>
+      <div id="deliveryLogContent" class="loading">Loading&hellip;</div>
+    </div>
   </div>
 
-  <div class="panel">
-    <h2>Proactive Alerts &mdash; <span style="color:var(--inconclusive)">Simulated Delivery</span></h2>
-    <p class="subtext">Detects which (KPI, region) movements newly cleared L1's materiality gate THIS run vs. the prior one, and routes each to whichever roles have that KPI's domain in scope &mdash; the same domain data <code>check_domain_entitlement</code> enforces, not a separate routing table. No real push is ever sent.</p>
-    <div id="alertsContent" class="loading">Loading&hellip;</div>
-  </div>
+  <section class="block">
+    <div class="block-head"><h2><span class="dot"></span>Entitlement Audit Log</h2></div>
+    <p class="block-desc">Every row/column and domain-level decision anywhere -- a real pipeline run's compile-time checks, or every persona-tab switch and domain-check above -- persisted here, newest first.</p>
+    <div class="panel"><div id="entitlementLogContent" class="loading">Loading&hellip;</div></div>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2><span class="dot"></span>Knowledge Graph</h2></div>
+    <p class="block-desc">A real, queryable structure over the semantic contract's own declared relationships (KPI&rarr;source, KPI&rarr;domain, role&rarr;domain, dimension&rarr;table) plus this run's actual verdicts. Drag nodes, scroll to zoom, click a node to query its real connections.</p>
+    <div class="panel">
+      <div class="kg-legend" id="kgLegend"></div>
+      <div class="kg-toolbar">
+        <input type="search" id="kgSearch" placeholder="Search nodes&hellip;" style="flex:1;min-width:160px" />
+        <select id="kgNodeSelect" style="min-width:200px"></select>
+        <button class="action-btn ghost" id="kgRelatedBtn" type="button">Show connections</button>
+        <button class="action-btn ghost" id="kgBlastBtn" type="button">Blast radius (2 hops)</button>
+      </div>
+      <div class="kg-canvas-wrap">
+        <svg id="kgSvg"></svg>
+        <div class="kg-zoom-controls">
+          <button id="kgZoomIn" type="button">+</button>
+          <button id="kgZoomOut" type="button">&minus;</button>
+          <button id="kgZoomReset" type="button">&#8635;</button>
+        </div>
+        <div class="kg-hint">Drag to reposition &middot; scroll to zoom &middot; click a node to inspect</div>
+      </div>
+      <div id="kgQueryResult" style="margin-top:14px"></div>
+      <div id="kgSharedMechanism" style="margin-top:14px"></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2><span class="dot"></span>Proactive Alerts <span class="subtext small" style="color:var(--inconclusive)">Simulated delivery</span></h2></div>
+    <p class="block-desc">Detects which (KPI, region) movements newly cleared L1's materiality gate this run vs. the prior one, and routes each to whichever roles have that KPI's domain in scope. No real push is ever sent.</p>
+    <div class="panel"><div id="alertsContent" class="loading">Loading&hellip;</div></div>
+  </section>
 
 </main>
 
-<script src="app.js"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

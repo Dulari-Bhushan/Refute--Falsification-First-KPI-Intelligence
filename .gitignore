@@ -11,3 +11,4 @@ build/
 *.sqlite
 *.db
 .claude/
+.llm_config.json

@@ -29,6 +29,7 @@ import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from engine.l4_compiler import EntitlementDenied, check_domain_entitlement, check_entitlement
 from engine.l5_adjudicate import adjudicate_all
@@ -38,6 +39,7 @@ from engine.calibration import run_calibration_demo
 from engine.drift_monitor import assess_drift, run_drift_demo
 from engine.knowledge_graph import load_graph
 from engine.proactive_monitor import run_alert_demo
+from engine.llm_config import VALID_BACKENDS, public_llm_config, set_llm_config
 
 ROOT = Path(__file__).parent.parent
 DATA_DIR = ROOT / "data" / "synthetic"
@@ -416,6 +418,60 @@ def adversarial_challenges():
     rows = [dict(r) for r in conn.execute("SELECT * FROM ledger WHERE hypothesis_id LIKE 'h_adversarial_%' ORDER BY id DESC LIMIT 10").fetchall()]
     conn.close()
     return {"challenges": rows}
+
+
+class LLMConfigUpdate(BaseModel):
+    backend: str | None = None
+    api_key: str | None = None
+    openrouter_model: str | None = None
+
+
+@app.get("/api/llm-config")
+def llm_config_get():
+    """Which backend generates predicates when the live-LLM step runs:
+    local GPU (default, $0, no key) or a hosted model via OpenRouter (real
+    per-call cost, needs a key). Never returns the key itself -- only
+    whether one is set (engine.llm_config.public_llm_config)."""
+    return public_llm_config()
+
+
+@app.post("/api/llm-config")
+def llm_config_set(update: LLMConfigUpdate):
+    if update.backend is not None and update.backend not in VALID_BACKENDS:
+        raise HTTPException(400, f"Unknown backend '{update.backend}', must be one of {sorted(VALID_BACKENDS)}.")
+    set_llm_config(backend=update.backend, api_key=update.api_key, openrouter_model=update.openrouter_model)
+    return public_llm_config()
+
+
+@app.post("/api/llm-generate/run")
+def llm_generate_run():
+    """Runs engine.l4_llm_generation.main() with whichever backend is
+    currently configured: generates a predicate for every L3 candidate
+    topic, adjudicates each through the real L5 pipeline (identical
+    treatment to the templated fixtures), and runs the adversarial
+    challenge against the surviving hypothesis. Requires the templated
+    pipeline (run_pipeline.py) to have already produced L1/L3 output."""
+    if not (DATA_DIR / "l3_topic_candidates.json").exists():
+        raise HTTPException(400, "Run the pipeline first (`uv run python run_pipeline.py`) -- no L3 topic candidates found yet.")
+    cfg = public_llm_config()
+    if cfg["backend"] == "openrouter" and not cfg["has_api_key"]:
+        raise HTTPException(400, "OpenRouter backend selected but no API key is configured. Set one in LLM Settings first.")
+
+    import engine.l4_llm_generation as l4llm
+
+    try:
+        l4llm.main()
+    except Exception as e:  # noqa: BLE001 -- surface whatever went wrong (model load failure, API error, etc.) to the dashboard rather than a bare 500
+        raise HTTPException(500, f"LLM generation run failed: {e}") from e
+
+    predicates_path = DATA_DIR / "l4_llm_generated_predicates.json"
+    generated = json.loads(predicates_path.read_text()) if predicates_path.exists() else []
+    return {
+        "backend": cfg["backend"],
+        "n_candidates": len(generated),
+        "n_accepted": sum(1 for g in generated if g["accepted"]),
+        "generated": generated,
+    }
 
 
 if UI_DIR.exists():
