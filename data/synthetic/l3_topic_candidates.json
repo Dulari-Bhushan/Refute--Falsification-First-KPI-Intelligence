@@ -1,6 +1,7 @@
 [
   {
     "cluster_id": 0,
+    "region": "West",
     "n_tickets": 6,
     "top_terms": [
       "storm",
@@ -24,6 +25,7 @@
   },
   {
     "cluster_id": 1,
+    "region": "West",
     "n_tickets": 3,
     "top_terms": [
       "positive",
@@ -48,6 +50,7 @@
   },
   {
     "cluster_id": 2,
+    "region": "West",
     "n_tickets": 13,
     "top_terms": [
       "competitor",
@@ -71,6 +74,7 @@
   },
   {
     "cluster_id": 3,
+    "region": "West",
     "n_tickets": 13,
     "top_terms": [
       "west",
@@ -95,6 +99,7 @@
   },
   {
     "cluster_id": 5,
+    "region": "West",
     "n_tickets": 7,
     "top_terms": [
       "account",
@@ -114,5 +119,54 @@
     "kpi_onset_week": 32,
     "became_candidate": false,
     "reason": "Has its own changepoint at week 33, but that's AFTER the KPI's own onset (week 32) -- this looks like a downstream symptom of the KPI movement, not a cause of it. Structurally excluded at generation time, per the precedence requirement (this is exactly the naive-RAG trap: a topic that spikes *because* the KPI moved would otherwise get treated as if it explained the movement)."
+  },
+  {
+    "cluster_id": 0,
+    "region": "Central",
+    "n_tickets": 3,
+    "top_terms": [
+      "asked",
+      "customer asked",
+      "customer",
+      "category",
+      "shipping cutoffs",
+      "upcoming"
+    ],
+    "representative_text": "Customer asked about upcoming holiday shipping cutoffs.",
+    "weekly_counts": {
+      "8": 1,
+      "12": 1,
+      "35": 1
+    },
+    "changepoint_week": 35,
+    "changepoint_confidence": 0.8278,
+    "precedes_kpi": true,
+    "kpi_onset_week": 37,
+    "became_candidate": true,
+    "reason": "Independent changepoint at week 35 (confidence=0.83), which precedes the KPI's onset (week 37) -- proposed as a candidate hypothesis."
+  },
+  {
+    "cluster_id": 1,
+    "region": "Central",
+    "n_tickets": 8,
+    "top_terms": [
+      "central_dc",
+      "central",
+      "late",
+      "order",
+      "fulfillment",
+      "flagged"
+    ],
+    "representative_text": "Order shipped from CENTRAL_DC is running 5 days late, no tracking update.",
+    "weekly_counts": {
+      "34": 6,
+      "35": 2
+    },
+    "changepoint_week": 34,
+    "changepoint_confidence": 0.8633,
+    "precedes_kpi": true,
+    "kpi_onset_week": 37,
+    "became_candidate": true,
+    "reason": "Independent changepoint at week 34 (confidence=0.86), which precedes the KPI's onset (week 37) -- proposed as a candidate hypothesis."
   }
 ]

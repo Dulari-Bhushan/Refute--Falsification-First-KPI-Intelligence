@@ -475,13 +475,19 @@ def llm_config_set(update: LLMConfigUpdate):
 
 
 @app.post("/api/llm-generate/run")
-def llm_generate_run():
-    """Runs engine.l4_llm_generation.main() with whichever backend is
+def llm_generate_run(region: str = "West"):
+    """Runs engine.l4_llm_generation.main(region) with whichever backend is
     currently configured: generates a predicate for every L3 candidate
-    topic, adjudicates each through the real L5 pipeline (identical
-    treatment to the templated fixtures), and runs the adversarial
-    challenge against the surviving hypothesis. Requires the templated
-    pipeline (run_pipeline.py) to have already produced L1/L3 output."""
+    topic IN THIS REGION, adjudicates each through the real L5 pipeline
+    (identical treatment to the templated fixtures, using that
+    investigation's own timing windows), and runs the adversarial challenge
+    against that investigation's surviving hypothesis. Requires the
+    templated pipeline (run_pipeline.py) to have already produced L1/L3
+    output."""
+    from engine.investigations import INVESTIGATIONS
+
+    if region not in INVESTIGATIONS:
+        raise HTTPException(400, f"Unknown investigation region '{region}', must be one of {sorted(INVESTIGATIONS)}.")
     if not (DATA_DIR / "l3_topic_candidates.json").exists():
         raise HTTPException(400, "Run the pipeline first (`uv run python run_pipeline.py`) -- no L3 topic candidates found yet.")
     cfg = public_llm_config()
@@ -491,7 +497,7 @@ def llm_generate_run():
     import engine.l4_llm_generation as l4llm
 
     try:
-        l4llm.main()
+        l4llm.main(region=region)
     except Exception as e:  # noqa: BLE001 -- surface whatever went wrong (model load failure, API error, etc.) to the dashboard rather than a bare 500
         raise HTTPException(500, f"LLM generation run failed: {e}") from e
 
@@ -499,6 +505,7 @@ def llm_generate_run():
     generated = json.loads(predicates_path.read_text()) if predicates_path.exists() else []
     return {
         "backend": cfg["backend"],
+        "region": region,
         "n_candidates": len(generated),
         "n_accepted": sum(1 for g in generated if g["accepted"]),
         "generated": generated,
