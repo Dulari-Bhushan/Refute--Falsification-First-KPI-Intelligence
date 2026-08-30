@@ -1128,6 +1128,23 @@ function initLlmSettings() {
     }
   });
 
+  document.getElementById("clearLlmCacheBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("clearLlmCacheBtn");
+    const statusEl = document.getElementById("llmConfigStatus");
+    btn.disabled = true;
+    btn.textContent = "Clearing...";
+    try {
+      const res = await fetch("/api/llm-generate/clear-cache", { method: "POST" });
+      const data = await res.json();
+      statusEl.textContent = `Cache cleared (${data.cleared} entr${data.cleared === 1 ? "y" : "ies"} removed) -- next run will make fresh calls.`;
+    } catch (e) {
+      statusEl.textContent = `Error clearing cache: ${e.message}`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Clear generation cache";
+    }
+  });
+
   document.getElementById("runLlmGenerationBtn").addEventListener("click", async () => {
     const btn = document.getElementById("runLlmGenerationBtn");
     const resultEl = document.getElementById("llmGenerationResult");

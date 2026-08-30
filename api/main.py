@@ -505,5 +505,23 @@ def llm_generate_run():
     }
 
 
+@app.post("/api/llm-generate/clear-cache")
+def llm_generate_clear_cache():
+    """Wipes the llm_predicate_cache table so the next 'Run live LLM
+    generation now' click makes genuinely fresh calls instead of replaying
+    a prior run's cached predicates -- self-service (no terminal/script
+    access needed), for exactly the moment before a live demo where a real
+    network round-trip matters more than saving a few cents."""
+    ledger_path = DATA_DIR / "ledger.sqlite"
+    if not ledger_path.exists():
+        return {"cleared": 0}
+    conn = sqlite3.connect(ledger_path)
+    cur = conn.execute("DELETE FROM llm_predicate_cache")
+    conn.commit()
+    n = cur.rowcount
+    conn.close()
+    return {"cleared": n}
+
+
 if UI_DIR.exists():
     app.mount("/", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
