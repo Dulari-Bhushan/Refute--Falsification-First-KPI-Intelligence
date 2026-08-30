@@ -425,6 +425,7 @@ section.block { display: grid; gap: 14px; scroll-margin-top: 78px; }
 .verdict-badge.inconclusive { background: var(--inconclusive-soft); color: var(--inconclusive); }
 
 .card-archetype { font-size: 10.5px; color: var(--text-faint); margin: 7px 0 8px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+.card-mechanism { font-size: 13px; color: var(--text); margin-bottom: 6px; line-height: 1.45; }
 .card-reason { font-size: 12.5px; color: var(--text-dim); }
 
 .card-detail { display: none; margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--border); font-size: 12px; font-family: var(--mono); color: var(--text-dim); }
