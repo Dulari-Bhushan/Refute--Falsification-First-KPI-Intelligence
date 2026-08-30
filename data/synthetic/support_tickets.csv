@@ -59,3 +59,11 @@ T0034,2025-09-01,West,weather_disruption,Power outage from the storm affected se
 T0058,2025-09-03,Central,baseline_noise,"Customer asked about product care instructions, Apparel category."
 T0059,2025-09-15,West,baseline_noise,"Feedback on packaging sustainability, generally positive."
 T0060,2025-09-29,East,baseline_noise,Routine question about order tracking link not loading.
+T0061,2025-08-25,Central,central_dc_delay,CENTRAL_DC flagged a warehouse system migration causing order processing delays.
+T0062,2025-08-25,Central,central_dc_delay,"Customer escalation: Central region deliveries running late this week, ops cites a WMS transition at the DC."
+T0063,2025-08-25,Central,central_dc_delay,Multiple complaints about CENTRAL_DC fulfillment slowdowns since the new system rollout.
+T0064,2025-08-26,Central,central_dc_delay,"Order shipped from CENTRAL_DC is running 5 days late, no tracking update."
+T0065,2025-08-27,Central,central_dc_delay,Support queue seeing a cluster of 'where is my order' tickets tied to Central fulfillment.
+T0066,2025-08-28,Central,central_dc_delay,Ops flagged recurring CENTRAL_DC dispatch delays tied to the warehouse system cutover.
+T0067,2025-09-01,Central,central_dc_delay,Customer asking why Central orders are slower than usual since late August.
+T0068,2025-09-01,Central,central_dc_delay,Carrier notified us of continued backlog at the Central distribution center post-migration.

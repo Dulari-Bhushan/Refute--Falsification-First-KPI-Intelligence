@@ -422,7 +422,11 @@ def build_counterfactual_projection(region: str = "West", weeks_ahead: int = 4) 
         "pre_attrition_baseline_usd": round(pre_baseline, 2),
         "current_level_usd": round(current_level, 2),
         "weekly_noise_sd_usd": round(weekly_sd, 2),
-        "assumption": f"IF the recommended action (account reassignment) succeeds, revenue recovers linearly toward the pre-attrition baseline (${pre_baseline:,.0f}/wk) over {weeks_ahead} weeks. This is a projection under a stated assumption, not a guarantee -- it will be scored against the actual outcome once observed (see the ledger's predicted_direction/predicted_magnitude_pct fields).",
+        "assumption": (
+            f"IF the recommended action (account reassignment) succeeds, revenue recovers linearly toward the pre-attrition baseline (${pre_baseline:,.0f}/wk) over {weeks_ahead} weeks. This is a projection under a stated assumption, not a guarantee -- it will be scored against the actual outcome once observed (see the ledger's predicted_direction/predicted_magnitude_pct fields)."
+            if region == "West"
+            else f"IF the identified root cause is resolved, revenue recovers linearly toward the pre-onset baseline (${pre_baseline:,.0f}/wk) over {weeks_ahead} weeks. This is a projection under a stated assumption, not a guarantee -- no specific remediation action has been built for this investigation yet (see the Narrated Brief above), only the projection math."
+        ),
         "scenario_no_action": no_action,
         "scenario_recovery": recovery,
     }

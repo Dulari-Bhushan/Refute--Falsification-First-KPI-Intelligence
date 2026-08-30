@@ -8,16 +8,24 @@ let STATE = {
   role: "regional_vp",
 };
 
-// The pipeline only ever ran hypothesis testing against ONE real gated
-// movement -- West revenue's week-32 changepoint (see engine/l6_narrate_
-// ledger.py, which hardcodes region="West" for the same reason: L3's
-// candidate generation and every predicate fixture target this KPI/region
-// specifically, not a generalized "whatever's selected" analysis). The top
-// selector changes the CHART; it was never wired to re-run hypothesis
-// testing for a different KPI/region, because no such testing exists.
-const INVESTIGATION = { region: "West", kpi: "revenue" };
+// Two real, independently root-caused movements exist: West revenue's
+// week-32 rep-attrition story (the original investigation), and Central
+// revenue's week-37 CENTRAL_DC fulfillment-delay story (see
+// data/inject_central_anomaly.py + data/add_central_investigation.py for
+// how the second one was added -- same L4/L5 rigor, genuinely computed
+// verdicts, not asserted). The top selector changes the CHART for any
+// KPI/region; hypothesis testing/action-recommendation panels below only
+// have real content for these two specific (region, kpi) pairs.
+const INVESTIGATIONS = [
+  { region: "West", kpi: "revenue" },
+  { region: "Central", kpi: "revenue" },
+];
+const INVESTIGATION = INVESTIGATIONS[0]; // the "primary" one -- action recommendation, counterfactual capacity math, and the persona brief's role-specific copy only exist for this one
+function currentInvestigation() {
+  return INVESTIGATIONS.find((inv) => inv.region === STATE.region && inv.kpi === STATE.kpi) || null;
+}
 function isInvestigatedContext() {
-  return STATE.region === INVESTIGATION.region && STATE.kpi === INVESTIGATION.kpi;
+  return currentInvestigation() !== null;
 }
 
 // Turns machine identifiers (KPI names, hypothesis IDs) into business-facing
@@ -32,7 +40,7 @@ function humanizeIdentifier(id) {
     .toLowerCase()
     .replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }
-const CHARTABLE_KPIS = new Set(["revenue", "units_sold", "marketing_attributed_revenue_share"]);
+const CHARTABLE_KPIS = new Set(["revenue", "units_sold", "marketing_attributed_revenue_share", "rep_attributed_revenue"]);
 
 async function getJSON(path) {
   const res = await fetch(API + path);
@@ -111,9 +119,10 @@ function renderKpiChart(kpi) {
   const textFaint = cssVar("--text-faint");
   const inconclusive = cssVar("--inconclusive");
 
-  const labels = kpi.series.map((d) => `w${d.week}`);
+  const periodPrefix = kpi.period_unit === "month" ? "m" : "w";
+  const labels = kpi.series.map((d) => d.label || `${periodPrefix}${d.period}`);
   const values = kpi.series.map((d) => d.value);
-  const cpIndex = kpi.changepoint_week ? kpi.series.findIndex((d) => d.week === kpi.changepoint_week) : -1;
+  const cpIndex = kpi.changepoint_period ? kpi.series.findIndex((d) => d.period === kpi.changepoint_period) : -1;
 
   const cpLinePlugin = {
     id: "cpLine",
@@ -133,7 +142,15 @@ function renderKpiChart(kpi) {
       ctx2.setLineDash([]);
       ctx2.fillStyle = inconclusive;
       ctx2.font = "600 10.5px Inter, sans-serif";
-      ctx2.fillText(`week ${kpi.changepoint_week} changepoint`, x + 6, yScale.top + 12);
+      const cpLabel = kpi.series[cpIndex]?.label || kpi.changepoint_period;
+      const text = `${kpi.period_unit === "month" ? "month" : "week"} ${cpLabel} changepoint`;
+      // The changepoint is often the LAST point (e.g. a monthly series whose
+      // break is "as of now") -- drawing the label to the line's right would
+      // clip off the edge of the canvas in that case, so flip to the left
+      // when there isn't room on the right.
+      const fitsRight = x + 6 + ctx2.measureText(text).width < xScale.right;
+      ctx2.textAlign = fitsRight ? "left" : "right";
+      ctx2.fillText(text, fitsRight ? x + 6 : x - 6, yScale.top + 12);
       ctx2.restore();
     },
   };
@@ -297,6 +314,10 @@ async function renderOverviewGrid() {
     })
   );
 
+  function nonChartableReason() {
+    return "Sparse-history series (launched week 34, too little history for a full-confidence verdict) -- reported with a widened, borrowed-baseline prior instead of being charted alongside the established weekly KPIs.";
+  }
+
   function cardHtml(r) {
     const key = `${r.kpi}::${r.region}`;
     const isChartable = CHARTABLE_KPIS.has(r.kpi);
@@ -305,6 +326,7 @@ async function renderOverviewGrid() {
     const spark = seriesCache[key] ? `<svg class="oc-spark" viewBox="0 0 120 26" preserveAspectRatio="none" width="100%" height="26">
         <path d="${sparkPath(seriesCache[key], 120, 26)}" fill="none" stroke="${gateColor}" stroke-width="1.6" />
       </svg>` : "";
+    const note = isChartable ? "" : `<div class="oc-note">${nonChartableReason()}</div>`;
     return `<button class="overview-card ${isActive ? "active" : ""}" data-kpi="${r.kpi}" data-region="${r.region}" data-chartable="${isChartable ? "1" : "0"}">
       <div class="oc-top">
         <span class="oc-kpi">${humanizeIdentifier(r.kpi)}</span>
@@ -313,6 +335,8 @@ async function renderOverviewGrid() {
       <div class="oc-impact" style="color:${r.gate_passed ? "var(--text)" : "var(--text-faint)"}">${fmtPct(r.business_impact_pct)}</div>
       ${spark}
       <div class="oc-gate ${r.gate_passed ? "pass" : "noise"}">${r.gate_passed ? "● GATE: PASS" : "○ within normal variation"}</div>
+      ${!isChartable ? `<div class="oc-hint">Not chartable above -- click for why</div>` : ""}
+      ${note}
     </button>`;
   }
 
@@ -347,7 +371,7 @@ function renderHypothesisCards(templated) {
         <div class="card-title" title="${h.hypothesis_id}">${humanizeIdentifier(h.hypothesis_id)}</div>
         <div class="verdict-badge ${verdictClass(h.verdict)}">${h.verdict}</div>
       </div>
-      <div class="card-archetype">${h.test_archetype}</div>
+      <div class="card-archetype">${h.test_archetype} &middot; ${h.region || "West"} · ${humanizeIdentifier(h.kpi || "revenue")}</div>
       <div class="card-reason">${h.reason}</div>
       <div class="card-detail">
         ${h.did_effect !== null && h.did_effect !== undefined ? `<div>effect: ${fmtPct(h.did_effect)}</div>` : ""}
@@ -375,8 +399,26 @@ function renderHypothesisCards(templated) {
 // ==================================================================== action panel
 function renderAction(data) {
   const el = document.getElementById("actionContent");
+  el.classList.remove("loading");
+  // The action-recommendation math (capacity constraints, owner routing)
+  // was only ever built for the PRIMARY (West) investigation -- reusing it
+  // while viewing a different investigation would show the wrong remedy
+  // for the wrong cause, so it's gated to context rather than reused.
+  const inv = currentInvestigation();
+  if (!inv || inv.region !== INVESTIGATION.region || inv.kpi !== INVESTIGATION.kpi) {
+    el.innerHTML = `<div class="subtext">${
+      inv
+        ? `No action recommendation built for ${inv.region} · ${humanizeIdentifier(inv.kpi)} yet -- only the West · Revenue investigation has the capacity-math/owner-routing step wired up so far. Its surviving cause and evidence are still shown above.`
+        : `No investigation is active for ${STATE.region} · ${humanizeIdentifier(STATE.kpi)} -- see the Narrated Brief above.`
+    }</div>`;
+    return;
+  }
   if (!data.has_action) {
-    el.innerHTML = `<div class="subtext">No hypothesis survived all applicable tests -- no action recommended yet. See the INCONCLUSIVE card above for what data would resolve it.</div>`;
+    el.innerHTML = `<div class="no-investigation">
+      <div class="ni-title">No hypothesis survived falsification</div>
+      <div>This is reported as <strong>unknown</strong>, not as the closest available guess -- see the INCONCLUSIVE/KILLED cards above for what each test actually found and what more data would resolve.</div>
+      <div class="subtext">If there's an event in this window that was never written down anywhere a tracked source could see it (a promo, an outage, a policy change), that's the most likely gap -- worth checking by hand before assuming there's nothing left to find.</div>
+    </div>`;
     return;
   }
   const a = data.action;
@@ -403,6 +445,7 @@ function renderAction(data) {
 // ==================================================================== priority queue
 function renderPriorities(priorities) {
   const el = document.getElementById("priorityQueue");
+  el.classList.remove("loading");
   if (!priorities || priorities.length === 0) {
     el.innerHTML = `<div class="subtext">No material movements currently in the queue.</div>`;
     return;
@@ -440,6 +483,7 @@ function renderContradiction(data) {
 // ==================================================================== freshness table
 function renderFreshness(recon) {
   const el = document.getElementById("freshnessTable");
+  el.classList.remove("loading");
   const rows = recon.source_freshness.map((s) => `
     <tr>
       <td>${s.source}</td>
@@ -469,6 +513,7 @@ function renderFreshness(recon) {
 // ==================================================================== telemetry
 function renderTelemetry(data) {
   const el = document.getElementById("telemetryStrip");
+  el.classList.remove("loading");
   const s = data.summary;
   el.innerHTML = `<div class="telemetry-strip">
     <div class="tstat"><div class="n">${s.total_calls}</div><div class="l">total stages</div></div>
@@ -489,19 +534,36 @@ async function renderBrief(role) {
 
   if (!isInvestigatedContext()) {
     const kpiLabel = humanizeIdentifier(STATE.kpi);
+    // REFUTE's own priority-queue correlation (same region, onset weeks
+    // within 2 of each other -- see prioritize_material_movements in
+    // engine/l1_signal.py) already knows when an untested movement is
+    // probably the SAME underlying event as the one real investigation,
+    // rather than an independent unexplained one. Surface that instead of
+    // a flat dead-end when it applies.
+    const priorityEntry = (STATE.priorities || []).find((p) => p.kpi === STATE.kpi && p.region === STATE.region);
+    // Same-region investigation whose KPI this movement is flagged as
+    // likely the same event as (matching by name, then confirming it's an
+    // investigation in THIS region -- "revenue" alone is ambiguous between
+    // West's and Central's investigations, the region match disambiguates).
+    const sameEventTarget = INVESTIGATIONS.find((i) => i.region === STATE.region && priorityEntry?.likely_same_event_as?.includes(i.kpi));
+    const investigationList = INVESTIGATIONS.map((i) => `${i.region} · ${humanizeIdentifier(i.kpi)}`).join(" and ");
+    const jumpTarget = sameEventTarget || INVESTIGATION;
+    const sameEventNote = sameEventTarget
+      ? `<div class="subtext"><strong>Not a separate mystery:</strong> REFUTE's own correlation check flags this as the same underlying event as ${sameEventTarget.region} · ${humanizeIdentifier(sameEventTarget.kpi)} -- same region, onset within 2 weeks of each other. It wasn't independently tested, but the surviving cause below is the most likely explanation for this movement too.</div>`
+      : `<div class="subtext">The real investigations this run are <strong>${investigationList}</strong>. Everything below (hypotheses, action, evidence) describes whichever of those you jump to.</div>`;
     briefEl.innerHTML = `
       <div class="no-investigation">
         <div class="ni-title">No hypotheses were tested for ${STATE.region} · ${kpiLabel}</div>
         <div>${STATE.kpiNarrative || "This KPI/region never cleared L1's materiality gate, so no root-cause analysis ran for it -- no L3 candidate generation, no L4 predicate compilation, no L5 adjudication, and no LLM call."}</div>
-        <div class="subtext">The only movement that triggered an investigation this run is <strong>${INVESTIGATION.region} · ${humanizeIdentifier(INVESTIGATION.kpi)}</strong>. Everything below (hypotheses, action, evidence) describes that event specifically.</div>
-        <button class="action-btn" id="jumpToInvestigationBtn" type="button">Jump to the investigation &rarr;</button>
+        ${sameEventNote}
+        <button class="action-btn" id="jumpToInvestigationBtn" type="button">Jump to ${jumpTarget.region} · ${humanizeIdentifier(jumpTarget.kpi)} &rarr;</button>
       </div>
     `;
     noteEl.className = "role-note";
     noteEl.textContent = "";
     document.getElementById("jumpToInvestigationBtn").addEventListener("click", async () => {
-      STATE.region = INVESTIGATION.region;
-      STATE.kpi = INVESTIGATION.kpi;
+      STATE.region = jumpTarget.region;
+      STATE.kpi = jumpTarget.kpi;
       document.getElementById("regionSelect").value = STATE.region;
       document.getElementById("kpiSelect").value = STATE.kpi;
       await loadKpiPanel(STATE.region, STATE.kpi);
@@ -509,9 +571,24 @@ async function renderBrief(role) {
     return;
   }
 
-  const survived = STATE.hypotheses.find((h) => h.verdict === "SURVIVED");
-  const killed = STATE.hypotheses.filter((h) => h.verdict === "KILLED");
-  const inconclusive = STATE.hypotheses.filter((h) => h.verdict === "INCONCLUSIVE");
+  // STATE.hypotheses holds verdicts from EVERY investigation this run --
+  // filter to the one currently selected so West's context never shows
+  // Central's hypotheses (or vice versa) mixed into the same brief.
+  const inv = currentInvestigation();
+  const invHypotheses = STATE.hypotheses.filter((h) => (h.region || "West") === inv.region && (h.kpi || "revenue") === inv.kpi);
+  const survived = invHypotheses.find((h) => h.verdict === "SURVIVED");
+  const killed = invHypotheses.filter((h) => h.verdict === "KILLED");
+  const inconclusive = invHypotheses.filter((h) => h.verdict === "INCONCLUSIVE");
+  // The action recommendation, capacity-constraint math, and counterfactual
+  // baseline were only ever built for the PRIMARY (West) investigation --
+  // showing West's "reassign accounts" action while viewing Central's
+  // fulfillment-delay investigation would be actively wrong, not just
+  // incomplete, so it's gated off rather than reused.
+  const isPrimary = inv.region === INVESTIGATION.region && inv.kpi === INVESTIGATION.kpi;
+  const actionAvailable = isPrimary && STATE.action && STATE.action.has_action;
+  const noActionNote = !isPrimary
+    ? `<div class="brief-line"><span class="brief-label">Action</span><div class="subtext">Not yet built for this investigation -- the action-recommendation step (capacity math, owner routing) only exists for the West · Revenue case so far.</div></div>`
+    : "";
 
   const ent = await getJSON(`/api/entitlement-check?role=${role}&dim=rep_id&region=${STATE.region}`);
 
@@ -520,8 +597,8 @@ async function renderBrief(role) {
       <div class="brief-line"><span class="brief-label">Headline</span><div>${STATE.kpiNarrative || ""}</div></div>
       ${survived ? `<div class="brief-line"><span class="brief-label">Cause</span><div>${humanizeIdentifier(survived.hypothesis_id)}</div></div>` : ""}
       <div class="brief-line"><span class="brief-label">Tested &amp; ruled out</span><div>${killed.length} alternative(s)${inconclusive.length ? `, ${inconclusive.length} inconclusive` : ""}</div></div>
-      ${STATE.action && STATE.action.has_action ? `<div class="brief-line"><span class="brief-label">Next step</span><div>${STATE.action.action.action}</div></div>` : ""}
-      ${STATE.action && STATE.action.has_action ? `<div class="brief-line"><span class="brief-label">Confidence</span><div>${STATE.action.action.confidence.split(" -- ")[0]}</div></div>` : ""}
+      ${actionAvailable ? `<div class="brief-line"><span class="brief-label">Next step</span><div>${STATE.action.action.action}</div></div>` : noActionNote}
+      ${actionAvailable ? `<div class="brief-line"><span class="brief-label">Confidence</span><div>${STATE.action.action.confidence.split(" -- ")[0]}</div></div>` : ""}
     `;
   } else if (role === "ops_manager_west") {
     briefEl.innerHTML = `
@@ -529,11 +606,11 @@ async function renderBrief(role) {
       <div class="brief-line"><span class="brief-label">Cause</span><div>${survived ? humanizeIdentifier(survived.hypothesis_id) : "none confirmed"}</div></div>
       <div class="brief-line"><span class="brief-label">Ruled out</span><div>${killed.map((h) => `${humanizeIdentifier(h.hypothesis_id)} (${h.test_archetype})`).join(", ") || "none"}</div></div>
       <div class="brief-line"><span class="brief-label">Inconclusive</span><div>${inconclusive.map((h) => humanizeIdentifier(h.hypothesis_id)).join(", ") || "none"}</div></div>
-      ${STATE.action && STATE.action.has_action ? `<div class="brief-line"><span class="brief-label">Action</span><div>${STATE.action.action.action}</div></div>` : ""}
-      ${STATE.action && STATE.action.has_action ? `<div class="brief-line"><span class="brief-label">Owner</span><div>${STATE.action.action.owner}</div></div>` : ""}
+      ${actionAvailable ? `<div class="brief-line"><span class="brief-label">Action</span><div>${STATE.action.action.action}</div></div>` : noActionNote}
+      ${actionAvailable ? `<div class="brief-line"><span class="brief-label">Owner</span><div>${STATE.action.action.owner}</div></div>` : ""}
     `;
   } else {
-    const rows = STATE.hypotheses
+    const rows = invHypotheses
       .map((h) => {
         const stats = h.did_effect !== null && h.did_effect !== undefined
           ? `effect=${fmtPct(h.did_effect)} p_raw=${h.did_pvalue_raw?.toFixed(4) ?? "n/a"} p_BH=${h.did_pvalue_bh?.toFixed(4) ?? "n/a"} MDE=${fmtPct(h.mde)} floor=${fmtPct(h.plausible_effect)} pretrends_p=${h.parallel_trends_pvalue?.toFixed(3) ?? "n/a"}`
@@ -554,6 +631,7 @@ async function renderBrief(role) {
 // ==================================================================== methods breakdown
 function renderMethodsBreakdown(data) {
   const el = document.getElementById("methodsBreakdown");
+  el.classList.remove("loading");
   const rows = data.entries
     .map(
       (e) => `<tr>
@@ -575,6 +653,7 @@ function renderMethodsBreakdown(data) {
 function renderCalibration(report) {
   document.getElementById("calibrationHonesty").textContent = report.honesty_note;
   const el = document.getElementById("calibrationContent");
+  el.classList.remove("loading");
   const reliabilityRows = report.reliability_diagram
     .map((b) => `<tr><td>[${b.bucket_lo.toFixed(1)}-${b.bucket_hi.toFixed(1)})</td><td>${b.n}</td><td>${(b.mean_predicted_confidence * 100).toFixed(0)}%</td><td>${(b.observed_frequency * 100).toFixed(0)}%</td><td style="color:${Math.abs(b.calibration_gap) > 0.15 ? "var(--inconclusive)" : "var(--text-dim)"}">${b.calibration_gap >= 0 ? "+" : ""}${(b.calibration_gap * 100).toFixed(0)}pp</td></tr>`)
     .join("");
@@ -601,6 +680,7 @@ function renderCalibration(report) {
 // ==================================================================== drift monitoring
 function renderDrift(data) {
   const el = document.getElementById("driftContent");
+  el.classList.remove("loading");
   const { real, demo } = data;
   document.getElementById("driftHonesty").textContent =
     real.status === "assessed"
@@ -637,6 +717,7 @@ function renderDrift(data) {
 // ==================================================================== domain-level security check
 async function renderDomainCheck() {
   const el = document.getElementById("domainCheckContent");
+  el.classList.remove("loading");
   const scenarios = [
     { role: "ops_manager_west", kpi: "revenue" },
     { role: "ops_manager_west", kpi: "rep_attributed_revenue" },
@@ -659,6 +740,7 @@ async function renderDomainCheck() {
 // ==================================================================== entitlement audit log
 async function renderEntitlementLog() {
   const el = document.getElementById("entitlementLogContent");
+  el.classList.remove("loading");
   const data = await getJSON("/api/entitlement-log?limit=30");
   if (!data.rows || data.rows.length === 0) {
     el.innerHTML = `<p class="subtext">No entitlement checks recorded yet.</p>`;
@@ -680,6 +762,7 @@ async function renderEntitlementLog() {
 // ==================================================================== delivery-channel routing
 async function renderDeliveryLog() {
   const el = document.getElementById("deliveryLogContent");
+  el.classList.remove("loading");
   const data = await getJSON("/api/delivery-log?limit=20");
   if (!data.rows || data.rows.length === 0) {
     el.innerHTML = `<p class="subtext">No deliveries simulated yet.</p>`;
@@ -701,6 +784,7 @@ async function renderDeliveryLog() {
 // ==================================================================== proactive alerts
 function renderAlerts(data) {
   const el = document.getElementById("alertsContent");
+  el.classList.remove("loading");
   const urgencyColor = (u) => (u === "urgent_push" ? "var(--killed)" : u === "routine_push" ? "var(--inconclusive)" : "var(--text-dim)");
   const recentRows = (data.recent || [])
     .map((a) => `<tr><td>${a.kpi}</td><td>${a.region}</td><td>${a.role}</td><td>${a.channel}</td><td style="color:${urgencyColor(a.urgency)}">${a.urgency}</td><td class="subtext">${a.message}</td></tr>`)
@@ -730,6 +814,7 @@ function renderAlerts(data) {
 function renderAdversarial(data) {
   const section = document.getElementById("adversarialSection");
   const el = document.getElementById("adversarialContent");
+  el.classList.remove("loading");
   if (!data.challenges || data.challenges.length === 0) {
     section.style.display = "none";
     return;
@@ -757,11 +842,15 @@ async function loadKpiPanel(region, kpi) {
   ]);
 
   const label = humanizeIdentifier(kpi);
-  document.getElementById("kpiTitle").textContent = kpiData.changepoint_week
-    ? `${region} · ${label} — Week ${kpiData.changepoint_week}`
+  const periodWord = kpiData.period_unit === "month" ? "Month" : "Week";
+  const cpEntry = kpiData.changepoint_period ? kpiData.series.find((d) => d.period === kpiData.changepoint_period) : null;
+  document.getElementById("kpiTitle").textContent = kpiData.changepoint_period
+    ? `${region} · ${label} — ${periodWord} ${cpEntry?.label || kpiData.changepoint_period}`
     : `${region} · ${label}`;
-  document.getElementById("kpiValue").textContent = fmtPct(kpiData.business_impact_pct);
-  document.getElementById("kpiValue").className = `value ${kpiData.gate_passed ? "" : "neutral"}`;
+  const kpiValueEl = document.getElementById("kpiValue");
+  kpiValueEl.textContent = fmtPct(kpiData.business_impact_pct);
+  kpiValueEl.className = `value updating ${kpiData.gate_passed ? "" : "neutral"}`;
+  kpiValueEl.addEventListener("animationend", () => kpiValueEl.classList.remove("updating"), { once: true });
   document.getElementById("kpiBadge").textContent = kpiData.gate_passed ? "GATE: PASS" : "GATE: NOISE";
   document.getElementById("kpiBadge").className = `badge ${kpiData.gate_passed ? "pass" : "noise"}`;
   document.getElementById("kpiNarrative").textContent = kpiData.narrative || "No material movement detected in this region -- within normal variation, no LLM call made.";
@@ -773,6 +862,7 @@ async function loadKpiPanel(region, kpi) {
   // keep dependent panels in sync with the new context
   if (STATE._initialized) {
     renderBrief(STATE.role);
+    if (STATE.action) renderAction(STATE.action);
     getJSON("/api/priorities").then(renderPriorities);
     document.querySelectorAll(".overview-card").forEach((c) => {
       c.classList.toggle("active", c.dataset.kpi === kpi && c.dataset.region === region);
@@ -981,12 +1071,13 @@ async function initKnowledgeGraph() {
 
 // ==================================================================== init
 async function loadInvestigationTag() {
-  const data = await getJSON(`/api/kpi-series?region=${INVESTIGATION.region}&kpi=${INVESTIGATION.kpi}`);
+  const results = await Promise.all(
+    INVESTIGATIONS.map((inv) => getJSON(`/api/kpi-series?region=${inv.region}&kpi=${inv.kpi}`))
+  );
   const tag = document.getElementById("investigationTag");
-  tag.textContent = data.changepoint_week
-    ? `Investigation: ${INVESTIGATION.region} · ${humanizeIdentifier(INVESTIGATION.kpi)}, Week ${data.changepoint_week} (${fmtPct(data.business_impact_pct)})`
-    : `Investigation: ${INVESTIGATION.region} · ${humanizeIdentifier(INVESTIGATION.kpi)}`;
-  tag.title = "The hypothesis testing below is always about this one event, regardless of the Region/KPI selector above -- it's the only movement that ever cleared the materiality gate and triggered root-cause analysis.";
+  const parts = results.map((data, i) => `${INVESTIGATIONS[i].region} · ${humanizeIdentifier(INVESTIGATIONS[i].kpi)} (${fmtPct(data.business_impact_pct)})`);
+  tag.textContent = `${INVESTIGATIONS.length} real investigations: ${parts.join("  ·  ")}`;
+  tag.title = "The hypothesis testing below only has real content for these investigations, regardless of the Region/KPI selector above -- these are the movements that cleared the materiality gate AND were independently root-caused.";
 }
 
 // ==================================================================== LLM backend settings
@@ -999,6 +1090,8 @@ async function loadLlmConfigIntoForm() {
   document.getElementById("llmConfigStatus").textContent =
     cfg.backend === "local"
       ? "Active: Local GPU"
+      : cfg.backend === "none"
+      ? "Active: No model -- rule-based/templated path only"
       : `Active: OpenRouter (${cfg.openrouter_model})${cfg.has_api_key ? "" : " -- no API key set yet"}`;
   return cfg;
 }
@@ -1084,6 +1177,7 @@ function initLlmSettings() {
 
 async function init() {
   initTheme();
+  initNavAndReveal(); // wired up before any data fetches -- a failed API call must never leave sections permanently invisible
 
   const [, , hypData, action, evidence, telemetry, methods, adversarial, priorities, contradictions, calibration, drift, alerts] = await Promise.all([
     loadKpiPanel(STATE.region, STATE.kpi),
@@ -1111,6 +1205,7 @@ async function init() {
   renderTelemetry(telemetry);
   renderMethodsBreakdown(methods);
   renderAdversarial(adversarial);
+  STATE.priorities = priorities;
   renderPriorities(priorities);
   renderContradiction(contradictions);
   renderCalibration(calibration);
@@ -1192,6 +1287,82 @@ async function init() {
     if (kpiChartInstance) kpiChartInstance.resize();
     if (cfChartInstance) cfChartInstance.resize();
   });
+}
+
+// ==================================================================== sidebar nav (scrollspy) + reveal-on-scroll
+function initNavAndReveal() {
+  const navLinks = [...document.querySelectorAll(".nav-link")];
+  const sections = navLinks
+    .map((link) => document.getElementById(link.dataset.target))
+    .filter(Boolean);
+
+  if (navLinks.length && sections.length) {
+    const setActive = (id) => {
+      navLinks.forEach((link) => link.classList.toggle("active", link.dataset.target === id));
+    };
+    // Sections in true top-to-bottom DOCUMENT order -- the sidebar's grouped
+    // nav order (Overview/Investigation/Data & Trust/...) does NOT match the
+    // page's actual DOM order (e.g. LLM Settings sits mid-page in the DOM but
+    // last in the nav grouping), so picking "first in nav order" would silently
+    // pick the wrong section. Also tracks intersection state persistently
+    // (a Map, not just the latest observer batch) -- a large instant jump
+    // (clicking a nav link, or scrollIntoView) can leave a passed-over
+    // section's entry out of a single callback batch entirely, so relying
+    // only on that batch previously left the highlighted link stuck on a
+    // stale section after a big jump.
+    const byDomOrder = sections.slice().sort((a, b) => a.offsetTop - b.offsetTop);
+    const lastSection = byDomOrder[byDomOrder.length - 1];
+    const intersecting = new Map(byDomOrder.map((s) => [s.id, false]));
+    // Single source of truth, checked on EVERY trigger (both the observer
+    // and the scroll listener funnel through this) so there's no race
+    // between two independent "set active" paths fighting each other.
+    const recompute = () => {
+      // The near-top intersection band alone can't cover the page's last
+      // section: it often can't be scrolled far enough up to ever enter
+      // that band (there's no more page below it to create the scroll
+      // headroom), which would otherwise leave the section above it stuck
+      // highlighted forever once the user hits the true bottom of the page.
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) {
+        setActive(lastSection.id);
+        return;
+      }
+      const topMost = byDomOrder.find((s) => intersecting.get(s.id));
+      if (topMost) setActive(topMost.id);
+    };
+    const spy = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => intersecting.set(e.target.id, e.isIntersecting));
+        recompute();
+      },
+      { rootMargin: "-72px 0px -70% 0px", threshold: 0 }
+    );
+    sections.forEach((s) => spy.observe(s));
+    window.addEventListener("scroll", recompute, { passive: true });
+
+    navLinks.forEach((link) => {
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        setActive(link.dataset.target); // immediate feedback -- don't wait on the scroll settling before the click's own target highlights
+        document.getElementById(link.dataset.target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+  }
+
+  const revealTargets = document.querySelectorAll(".reveal");
+  if (revealTargets.length) {
+    const ro = new IntersectionObserver(
+      (entries, obs) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            e.target.classList.add("visible");
+            obs.unobserve(e.target);
+          }
+        });
+      },
+      { threshold: 0.08, rootMargin: "0px 0px -40px 0px" }
+    );
+    revealTargets.forEach((el) => ro.observe(el));
+  }
 }
 
 init().catch((e) => {

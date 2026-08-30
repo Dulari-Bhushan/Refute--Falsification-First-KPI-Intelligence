@@ -149,6 +149,14 @@ def generate_candidates(kpi_onset_week: int, region_filter: str = "West") -> lis
     week1_start = pd.Timestamp(contract["analysis_calendar"]["week1_start"])
 
     tickets = pd.read_csv(DATA_DIR / "support_tickets.csv", parse_dates=["created_at"])
+    # region_filter was accepted here but never actually applied -- every
+    # call clustered the FULL cross-region ticket pool regardless of the
+    # argument. Latent and invisible while only one region ever had a real
+    # signal-bearing cluster; surfaces the moment a second region does; two
+    # thematically similar clusters (e.g. two different DCs' shipping
+    # delays) would otherwise get merged into one, corrupting both regions'
+    # candidate lists.
+    tickets = tickets[tickets["region"] == region_filter]
     labels, embeddings = cluster_tickets(tickets)
     tickets = tickets.assign(cluster=labels)
 
