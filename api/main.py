@@ -85,19 +85,50 @@ def contradictions():
 
 @app.get("/api/kpi-series")
 def kpi_series(region: str = "West", kpi: str = "revenue"):
-    panel = pd.read_csv(DATA_DIR / "reconciled_weekly.csv")
-    if kpi not in panel.columns:
-        raise HTTPException(400, f"Unknown kpi '{kpi}'.")
-    rows = panel[panel.region == region][["week", kpi]].sort_values("week")
-
+    """rep_attributed_revenue is served at its own native MONTHLY grain
+    (9 points), not the flat-repeated weekly resample that lives in
+    reconciled_weekly.csv -- charting that column directly would be
+    misleading twice over: it manufactures fake weekly step-artifacts out
+    of a single monthly total (exactly what engine/l1_signal.py's own
+    docstring warns against for analysis), and l1_signal_results.json's
+    changepoint_period_estimate for this KPI is a 1-indexed MONTH number,
+    which would land a "changepoint" marker at the wrong x-position if
+    plotted against week-indexed data. Every other KPI stays weekly,
+    unchanged."""
     l1 = _read_json("l1_signal_results.json")
     l1_entry = next((r for r in l1 if r["kpi"] == kpi and r["region"] == region), None)
+
+    if kpi == "rep_attributed_revenue":
+        # crm_headcount's own "month" column is a calendar string ("2025-01"),
+        # but changepoint_period_estimate (from engine/l1_signal.py) is the
+        # 1-indexed POSITION within this same sorted series, not a parsed
+        # calendar month number -- L1 never looks at the string's value, only
+        # its sort order. Indexing this series the same way (enumerate after
+        # sort, not int() on the string) is what makes changepoint_period
+        # actually line up with the right point; the calendar string is kept
+        # alongside purely as a nicer axis label.
+        crm = pd.read_csv(DATA_DIR / "crm_headcount.csv")
+        rep_monthly = crm.groupby(["region", "month"])["rep_attributed_revenue_usd"].sum().reset_index()
+        rows = rep_monthly[rep_monthly.region == region].sort_values("month").reset_index(drop=True)
+        period_unit = "month"
+        series = [
+            {"period": i + 1, "value": float(v), "label": str(m)}
+            for i, (m, v) in enumerate(zip(rows["month"], rows["rep_attributed_revenue_usd"]))
+        ]
+    else:
+        panel = pd.read_csv(DATA_DIR / "reconciled_weekly.csv")
+        if kpi not in panel.columns:
+            raise HTTPException(400, f"Unknown kpi '{kpi}'.")
+        rows = panel[panel.region == region][["week", kpi]].sort_values("week")
+        period_unit = "week"
+        series = [{"period": int(w), "value": float(v)} for w, v in zip(rows["week"], rows[kpi])]
 
     return {
         "region": region,
         "kpi": kpi,
-        "series": [{"week": int(w), "value": float(v)} for w, v in zip(rows["week"], rows[kpi])],
-        "changepoint_week": l1_entry["changepoint_period_estimate"] if l1_entry else None,
+        "period_unit": period_unit,
+        "series": series,
+        "changepoint_period": l1_entry["changepoint_period_estimate"] if l1_entry else None,
         "gate_passed": l1_entry["gate_passed"] if l1_entry else None,
         "business_impact_pct": l1_entry["business_impact_pct"] if l1_entry else None,
         "narrative": l1_entry["narrative"] if l1_entry else None,

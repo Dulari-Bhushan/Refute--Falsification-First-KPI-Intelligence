@@ -21,7 +21,9 @@
     "treatment_sql_hash": "2efa0dc4ba6cdb14",
     "control_sql_hash": "a445b8599bb19a8d",
     "treatment_sql": "SELECT fulfillment_center AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND fulfillment_center IN (?) AND week BETWEEN ? AND ? GROUP BY fulfillment_center, week ORDER BY fulfillment_center, week",
-    "control_sql": "SELECT fulfillment_center AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND fulfillment_center IN (?,?) AND week BETWEEN ? AND ? GROUP BY fulfillment_center, week ORDER BY fulfillment_center, week"
+    "control_sql": "SELECT fulfillment_center AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND fulfillment_center IN (?,?) AND week BETWEEN ? AND ? GROUP BY fulfillment_center, week ORDER BY fulfillment_center, week",
+    "region": "West",
+    "kpi": "revenue"
   },
   {
     "hypothesis_id": "h_competitor_launch",
@@ -45,7 +47,9 @@
     "treatment_sql_hash": "6caddac4ce53f9c6",
     "control_sql_hash": "cca93e21d9697754",
     "treatment_sql": "SELECT product_category AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND product_category IN (?) AND week BETWEEN ? AND ? GROUP BY product_category, week ORDER BY product_category, week",
-    "control_sql": "SELECT product_category AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND product_category IN (?,?,?) AND week BETWEEN ? AND ? GROUP BY product_category, week ORDER BY product_category, week"
+    "control_sql": "SELECT product_category AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND product_category IN (?,?,?) AND week BETWEEN ? AND ? GROUP BY product_category, week ORDER BY product_category, week",
+    "region": "West",
+    "kpi": "revenue"
   },
   {
     "hypothesis_id": "h_accessories_pricing",
@@ -69,7 +73,9 @@
     "treatment_sql_hash": "bcd4d37175b6430b",
     "control_sql_hash": "4013d33cc762d8c5",
     "treatment_sql": "SELECT product_category AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND product_category IN (?) AND week BETWEEN ? AND ? GROUP BY product_category, week ORDER BY product_category, week",
-    "control_sql": "SELECT product_category AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND product_category IN (?,?,?) AND week BETWEEN ? AND ? GROUP BY product_category, week ORDER BY product_category, week"
+    "control_sql": "SELECT product_category AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND product_category IN (?,?,?) AND week BETWEEN ? AND ? GROUP BY product_category, week ORDER BY product_category, week",
+    "region": "West",
+    "kpi": "revenue"
   },
   {
     "hypothesis_id": "h_rep_attrition",
@@ -93,7 +99,9 @@
     "treatment_sql_hash": "c098a6e038d7fd15",
     "control_sql_hash": "ddbc3c0ce417b2b6",
     "treatment_sql": "SELECT rep_id AS unit, month AS period, SUM(rep_attributed_revenue_usd) AS value FROM crm_headcount WHERE region = ? AND rep_id IN (?,?,?,?) AND month BETWEEN ? AND ? GROUP BY rep_id, month ORDER BY rep_id, month",
-    "control_sql": "SELECT rep_id AS unit, month AS period, SUM(rep_attributed_revenue_usd) AS value FROM crm_headcount WHERE region = ? AND rep_id IN (?,?) AND month BETWEEN ? AND ? GROUP BY rep_id, month ORDER BY rep_id, month"
+    "control_sql": "SELECT rep_id AS unit, month AS period, SUM(rep_attributed_revenue_usd) AS value FROM crm_headcount WHERE region = ? AND rep_id IN (?,?) AND month BETWEEN ? AND ? GROUP BY rep_id, month ORDER BY rep_id, month",
+    "region": "West",
+    "kpi": "revenue"
   },
   {
     "hypothesis_id": "h_billing_complaints",
@@ -117,7 +125,9 @@
     "treatment_sql_hash": null,
     "control_sql_hash": null,
     "treatment_sql": null,
-    "control_sql": null
+    "control_sql": null,
+    "region": "West",
+    "kpi": "revenue"
   },
   {
     "hypothesis_id": "h_weather_disruption",
@@ -141,7 +151,9 @@
     "treatment_sql_hash": null,
     "control_sql_hash": null,
     "treatment_sql": null,
-    "control_sql": null
+    "control_sql": null,
+    "region": "West",
+    "kpi": "revenue"
   },
   {
     "hypothesis_id": "h_marketing_spend_cut",
@@ -166,6 +178,60 @@
     "treatment_sql_hash": "9826e27054b2526c,1964ad9b7acd493e,20ecb697a712bf9f",
     "control_sql_hash": "11f3ef1d40af6650,ba8390c483df9ef9,1cacf7e8bd076004",
     "treatment_sql": "-- West\nSELECT channel AS channel, week AS period, SUM(spend_usd) AS value FROM marketing_spend WHERE region = ? AND channel IN (?,?,?,?) AND week BETWEEN ? AND ? GROUP BY channel, week ORDER BY channel, week\n-- params: ['West', 'Search', 'Social', 'Display', 'Email', 28, 34]\n\n-- East\nSELECT channel AS channel, week AS period, SUM(spend_usd) AS value FROM marketing_spend WHERE region = ? AND channel IN (?,?,?,?) AND week BETWEEN ? AND ? GROUP BY channel, week ORDER BY channel, week\n-- params: ['East', 'Search', 'Social', 'Display', 'Email', 28, 34]\n\n-- Central\nSELECT channel AS channel, week AS period, SUM(spend_usd) AS value FROM marketing_spend WHERE region = ? AND channel IN (?,?,?,?) AND week BETWEEN ? AND ? GROUP BY channel, week ORDER BY channel, week\n-- params: ['Central', 'Search', 'Social', 'Display', 'Email', 28, 34]",
-    "control_sql": "-- West\nSELECT week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND week BETWEEN ? AND ? GROUP BY week ORDER BY week\n-- params: ['West', 28, 34]\n\n-- East\nSELECT week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND week BETWEEN ? AND ? GROUP BY week ORDER BY week\n-- params: ['East', 28, 34]\n\n-- Central\nSELECT week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND week BETWEEN ? AND ? GROUP BY week ORDER BY week\n-- params: ['Central', 28, 34]"
+    "control_sql": "-- West\nSELECT week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND week BETWEEN ? AND ? GROUP BY week ORDER BY week\n-- params: ['West', 28, 34]\n\n-- East\nSELECT week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND week BETWEEN ? AND ? GROUP BY week ORDER BY week\n-- params: ['East', 28, 34]\n\n-- Central\nSELECT week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND week BETWEEN ? AND ? GROUP BY week ORDER BY week\n-- params: ['Central', 28, 34]",
+    "region": "West",
+    "kpi": "revenue"
+  },
+  {
+    "hypothesis_id": "h_central_dc_delay",
+    "test_archetype": "placebo",
+    "dim": "fulfillment_center",
+    "n_treatment_units": 1,
+    "n_control_units": 2,
+    "did_effect": -0.23,
+    "did_se": 0.08,
+    "did_pvalue_raw": 0.003151826610205115,
+    "did_pvalue_bh": 0.0063,
+    "parallel_trends_pvalue": 0.9925257290518535,
+    "parallel_trends_ok": true,
+    "mde": 0.1,
+    "plausible_effect": 0.1,
+    "verdict": "SURVIVED",
+    "reason": "BH-adjusted p=0.0063 < q=0.1; treatment moved 23.0pp more than control beyond the pre-period baseline difference -- consistent with the predicted mechanism.",
+    "notes": [
+      "Pre-trends look parallel."
+    ],
+    "treatment_sql_hash": "e2efd9c72ce9f711",
+    "control_sql_hash": "cb770763cd095e51",
+    "treatment_sql": "SELECT fulfillment_center AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND fulfillment_center IN (?) AND week BETWEEN ? AND ? GROUP BY fulfillment_center, week ORDER BY fulfillment_center, week",
+    "control_sql": "SELECT fulfillment_center AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND fulfillment_center IN (?,?) AND week BETWEEN ? AND ? GROUP BY fulfillment_center, week ORDER BY fulfillment_center, week",
+    "region": "Central",
+    "kpi": "revenue"
+  },
+  {
+    "hypothesis_id": "h_central_competitor_launch",
+    "test_archetype": "specificity",
+    "dim": "product_category",
+    "n_treatment_units": 1,
+    "n_control_units": 3,
+    "did_effect": -0.0,
+    "did_se": 0.04,
+    "did_pvalue_raw": 0.9920937359267707,
+    "did_pvalue_bh": 0.99209,
+    "parallel_trends_pvalue": 0.964513995345383,
+    "parallel_trends_ok": true,
+    "mde": 0.06,
+    "plausible_effect": 0.1,
+    "verdict": "KILLED",
+    "reason": "Not significant (BH-adjusted p=0.9921), and the test had enough power to detect a plausible effect (MDE 6.0pp <= plausible 10pp) if one existed.",
+    "notes": [
+      "Pre-trends look parallel."
+    ],
+    "treatment_sql_hash": "cabbc0616f74cddd",
+    "control_sql_hash": "9f9aec469e3ebde7",
+    "treatment_sql": "SELECT product_category AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND product_category IN (?) AND week BETWEEN ? AND ? GROUP BY product_category, week ORDER BY product_category, week",
+    "control_sql": "SELECT product_category AS unit, week AS period, SUM(gross_revenue) AS value FROM pos_transactions WHERE region = ? AND product_category IN (?,?,?) AND week BETWEEN ? AND ? GROUP BY product_category, week ORDER BY product_category, week",
+    "region": "Central",
+    "kpi": "revenue"
   }
 ]

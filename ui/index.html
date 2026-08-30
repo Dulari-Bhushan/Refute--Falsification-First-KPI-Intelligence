@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>REFUTE -- KPI Intelligence Demo</title>
-<link rel="stylesheet" href="style.css?v=5" />
+<link rel="stylesheet" href="style.css?v=9" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 </head>
@@ -33,6 +33,7 @@
         <option value="revenue">Revenue</option>
         <option value="units_sold">Units sold</option>
         <option value="marketing_attributed_revenue_share">Marketing-attributed share</option>
+        <option value="rep_attributed_revenue">Rep-attributed revenue (monthly)</option>
       </select>
     </div>
     <button class="icon-btn" id="themeToggle" title="Toggle light / dark theme">
@@ -42,9 +43,47 @@
   </div>
 </div>
 
-<main>
+<div class="app-shell">
+<nav class="side-nav" id="sideNav">
+  <div class="nav-group">
+    <div class="nav-group-label">Overview</div>
+    <a class="nav-link" href="#sec-overview" data-target="sec-overview">Investigation Summary</a>
+    <a class="nav-link" href="#sec-movements" data-target="sec-movements">All Movements</a>
+    <a class="nav-link" href="#sec-priority" data-target="sec-priority">Priority Queue</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-label">Investigation</div>
+    <a class="nav-link" href="#sec-hypotheses" data-target="sec-hypotheses">Hypotheses Tested</a>
+    <a class="nav-link" href="#sec-adversarial" data-target="sec-adversarial">Adversarial Challenge</a>
+    <a class="nav-link" href="#sec-action" data-target="sec-action">Action &amp; Forecast</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-label">Data &amp; Trust</div>
+    <a class="nav-link" href="#sec-trust" data-target="sec-trust">Freshness &amp; Telemetry</a>
+    <a class="nav-link" href="#sec-methods" data-target="sec-methods">Methods Breakdown</a>
+    <a class="nav-link" href="#sec-calibration" data-target="sec-calibration">Calibration</a>
+    <a class="nav-link" href="#sec-drift" data-target="sec-drift">Drift Monitoring</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-label">Governance</div>
+    <a class="nav-link" href="#sec-security" data-target="sec-security">Security &amp; Routing</a>
+    <a class="nav-link" href="#sec-audit" data-target="sec-audit">Audit Log</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-label">Explore</div>
+    <a class="nav-link" href="#sec-kg" data-target="sec-kg">Knowledge Graph</a>
+    <a class="nav-link" href="#sec-alerts" data-target="sec-alerts">Proactive Alerts</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-label">System</div>
+    <a class="nav-link" href="#sec-llm" data-target="sec-llm">LLM Backend Settings</a>
+    <a class="nav-link" href="#sec-feedback" data-target="sec-feedback">Feedback Loop</a>
+  </div>
+</nav>
 
-  <div class="grid-2">
+<main class="content" id="mainContent">
+
+  <div class="grid-2 reveal" id="sec-overview">
     <div class="panel">
       <div class="hero-top">
         <div>
@@ -55,7 +94,7 @@
         <div class="value" id="kpiValue">&mdash;</div>
         <div class="badge" id="kpiBadge">&mdash;</div>
       </div>
-      <div class="subtext" id="kpiNarrative">Loading&hellip;</div>
+      <div class="subtext narrative-text" id="kpiNarrative">Loading&hellip;</div>
       <div class="chart-wrap"><canvas id="kpiChart"></canvas></div>
     </div>
 
@@ -72,17 +111,19 @@
     </div>
   </div>
 
-  <section class="block">
+  <section class="block reveal" id="sec-movements">
     <div class="block-head">
       <h2><span class="dot"></span>All Movements &mdash; Every KPI &times; Region L1 Was Run Against</h2>
     </div>
     <p class="block-desc">Detecting a real signal isn't the same as only looking where you already expect one. Every card below is a genuine BOCPD result for that KPI/region pair -- most stay noise (no LLM call, no further layers run for them). Click any card to load it into the chart above.</p>
     <div class="panel">
-      <div class="overview-grid" id="overviewGrid"><div class="loading">Loading&hellip;</div></div>
+      <div class="overview-grid" id="overviewGrid">
+        <div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div>
+      </div>
     </div>
   </section>
 
-  <section class="block">
+  <section class="block reveal" id="sec-priority">
     <div class="block-head"><h2><span class="dot"></span>Priority Queue &mdash; What To Investigate First</h2></div>
     <p class="block-desc">Detection isn't the same as knowing which one to look at first when several clear the gate at once. Ranked by business-impact magnitude &times; statistical confidence; movements sharing a region and a nearby onset week are flagged as probably the same underlying event.</p>
     <div class="panel"><div id="priorityQueue" class="loading">Loading&hellip;</div></div>
@@ -93,7 +134,7 @@
     <div class="panel"><div id="contradictionContent"></div></div>
   </section>
 
-  <section class="block">
+  <section class="block reveal" id="sec-hypotheses">
     <div class="block-head"><h2><span class="dot"></span>Hypotheses Tested</h2></div>
     <p class="block-desc">Click a card for the full statistical evidence, including the exact auditable SQL each verdict was computed from.</p>
     <div class="cards" id="hypothesisCards"><div class="loading">Loading&hellip;</div></div>
@@ -105,7 +146,7 @@
     <div class="panel"><div id="adversarialContent" class="loading">Loading&hellip;</div></div>
   </section>
 
-  <div class="grid-2">
+  <div class="grid-2 reveal" id="sec-action">
     <div class="panel" id="actionPanel">
       <h2>Recommended Action</h2>
       <div id="actionContent" class="loading">Loading&hellip;</div>
@@ -118,7 +159,7 @@
     </div>
   </div>
 
-  <div class="grid-2">
+  <div class="grid-2 reveal" id="sec-trust">
     <div class="panel">
       <h2>Source Freshness &amp; Lineage</h2>
       <div id="freshnessTable" class="loading">Loading&hellip;</div>
@@ -130,15 +171,15 @@
     </div>
   </div>
 
-  <section class="block">
+  <section class="block reveal" id="sec-methods">
     <div class="block-head"><h2><span class="dot"></span>Methods Breakdown &mdash; Why Each Layer Uses What It Uses</h2></div>
     <p class="block-desc">"The LLM should not be treated as the source of quantitative truth." Every stage declares its own method category here -- imported directly from <code>engine/methods_registry.py</code>, structurally checked so no LLM-driven stage is ever marked a quantitative source of truth.</p>
     <div class="panel"><div id="methodsBreakdown" class="loading">Loading&hellip;</div></div>
   </section>
 
-  <section class="block">
+  <section class="block reveal" id="sec-llm">
     <div class="block-head"><h2><span class="dot"></span>Live LLM Predicate Generation &mdash; Backend Settings</h2></div>
-    <p class="block-desc">Choose what generates a candidate hypothesis's mechanism + treatment/control predicate when you run live generation: a local GPU model (default, $0, no key, no network) or a hosted model via OpenRouter (real per-call cost, needs your own key). Neither backend is trusted more than the other -- both go through the identical schema + semantic-domain validation gates before anything gets tested.</p>
+    <p class="block-desc">Choose what generates a candidate hypothesis's mechanism + treatment/control predicate when you run live generation: a local GPU model (default, $0, no key, no network), a hosted model via OpenRouter (real per-call cost, needs your own key), or no model at all. Neither model backend is trusted more than the other -- both go through the identical schema + semantic-domain validation gates before anything gets tested.</p>
     <div class="panel">
       <div class="llm-backend-choice">
         <label class="llm-radio">
@@ -153,6 +194,13 @@
           <div>
             <div class="lr-title">OpenRouter</div>
             <div class="lr-sub">Hosted model &middot; real per-call cost &middot; needs an API key &middot; no GPU required</div>
+          </div>
+        </label>
+        <label class="llm-radio">
+          <input type="radio" name="llmBackend" value="none" />
+          <div>
+            <div class="lr-title">No model</div>
+            <div class="lr-sub">Rule-based / templated only &middot; $0 &middot; nothing leaves this machine, nothing is read by a model</div>
           </div>
         </label>
       </div>
@@ -178,7 +226,7 @@
     </div>
   </section>
 
-  <section class="block">
+  <section class="block reveal" id="sec-feedback">
     <div class="block-head"><h2><span class="dot"></span>Feedback Loop Demo</h2></div>
     <p class="block-desc">An analyst is skeptical of the SURVIVED verdict on <code>h_rep_attrition</code> ("feels like general demand softness, not attrition"). Submitting this re-expresses it as its own falsifiable predicate and runs it through the identical L4/L5 pipeline.</p>
     <div class="panel">
@@ -187,19 +235,19 @@
     </div>
   </section>
 
-  <section class="block">
+  <section class="block reveal" id="sec-calibration">
     <div class="block-head"><h2><span class="dot"></span>Calibration Mechanism <span class="subtext small" style="color:var(--inconclusive)">Simulated backtest</span></h2></div>
     <p class="block-desc" id="calibrationHonesty"></p>
     <div class="panel"><div id="calibrationContent" class="loading">Loading&hellip;</div></div>
   </section>
 
-  <section class="block">
+  <section class="block reveal" id="sec-drift">
     <div class="block-head"><h2><span class="dot"></span>Model / Data Drift Monitoring</h2></div>
     <p class="block-desc" id="driftHonesty"></p>
     <div class="panel"><div id="driftContent" class="loading">Loading&hellip;</div></div>
   </section>
 
-  <div class="grid-2">
+  <div class="grid-2 reveal" id="sec-security">
     <div class="panel">
       <h2>Domain-Level Security Check</h2>
       <p class="subtext" style="margin-top:-8px;margin-bottom:12px">Denies a whole KPI outright, aggregate or not, regardless of region or dimension -- <code>engine.l4_compiler.check_domain_entitlement</code>.</p>
@@ -212,13 +260,13 @@
     </div>
   </div>
 
-  <section class="block">
+  <section class="block reveal" id="sec-audit">
     <div class="block-head"><h2><span class="dot"></span>Entitlement Audit Log</h2></div>
     <p class="block-desc">Every row/column and domain-level decision anywhere -- a real pipeline run's compile-time checks, or every persona-tab switch and domain-check above -- persisted here, newest first.</p>
     <div class="panel"><div id="entitlementLogContent" class="loading">Loading&hellip;</div></div>
   </section>
 
-  <section class="block">
+  <section class="block reveal" id="sec-kg">
     <div class="block-head"><h2><span class="dot"></span>Knowledge Graph</h2></div>
     <p class="block-desc">A real, queryable structure over the semantic contract's own declared relationships (KPI&rarr;source, KPI&rarr;domain, role&rarr;domain, dimension&rarr;table) plus this run's actual verdicts. Drag nodes, scroll to zoom, click a node to query its real connections.</p>
     <div class="panel">
@@ -243,14 +291,15 @@
     </div>
   </section>
 
-  <section class="block">
+  <section class="block reveal" id="sec-alerts">
     <div class="block-head"><h2><span class="dot"></span>Proactive Alerts <span class="subtext small" style="color:var(--inconclusive)">Simulated delivery</span></h2></div>
     <p class="block-desc">Detects which (KPI, region) movements newly cleared L1's materiality gate this run vs. the prior one, and routes each to whichever roles have that KPI's domain in scope. No real push is ever sent.</p>
     <div class="panel"><div id="alertsContent" class="loading">Loading&hellip;</div></div>
   </section>
 
 </main>
+</div>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

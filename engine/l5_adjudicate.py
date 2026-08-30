@@ -217,23 +217,30 @@ def compute_power_gate(panel: pd.DataFrame) -> tuple[float, float]:
     return mde, plausible_effect
 
 
-def adjudicate_all(role: str = "ops_manager_west", region: str = "West", predicates: list[dict] | None = None) -> list[TestOutcome]:
+def adjudicate_all(role: str = "ops_manager_west", region: str = "West", predicates: list[dict] | None = None, windows: dict[str, tuple] | None = None) -> list[TestOutcome]:
     """Runs every SQL-backed predicate (default: PREDICATE_FIXTURES) through
     the identical compile -> panel -> DiD -> parallel-trends -> power-gate ->
     BH-correction pipeline. `predicates` is exposed as a parameter (not
     hardcoded to the fixtures) specifically so engine/l6_narrate_ledger.py's
     feedback loop can run an analyst's counter-hypothesis through the exact
     same rigor as any other predicate -- a counter-hypothesis that never
-    actually reaches this function isn't "adjudicated," it's just unscored."""
+    actually reaches this function isn't "adjudicated," it's just unscored.
+    `windows` defaults to the module-level WINDOWS (West's own pre/post
+    weeks) -- exposed so a genuinely different investigation (a different
+    region, with its own L1-detected changepoint elsewhere in the calendar)
+    isn't forced through West's timing window, which would silently dilute
+    or misplace its treatment/control comparison."""
     contract = yaml.safe_load(CONTRACT_PATH.read_text())
     conn = load_database()
     if predicates is None:
         predicates = PREDICATE_FIXTURES
+    if windows is None:
+        windows = WINDOWS
 
     outcomes: list[TestOutcome] = []
     for raw in predicates:
         predicate = validate_predicate(raw)
-        panel = fetch_unit_panel(conn, predicate, region, role, contract, WINDOWS)
+        panel = fetch_unit_panel(conn, predicate, region, role, contract, windows)
 
         outcome = TestOutcome(
             hypothesis_id=predicate.hypothesis_id,
