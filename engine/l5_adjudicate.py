@@ -524,7 +524,12 @@ def main() -> None:
     if l1_path.exists() and l3_path.exists():
         l1_results = json.loads(l1_path.read_text())
         west_revenue = next(r for r in l1_results if r["kpi"] == "revenue" and r["region"] == "West")
-        l3_candidates = json.loads(l3_path.read_text())
+        # l3_topic_candidates.json now holds every investigation's clusters
+        # (see engine/l3_hypothesise.py's INVESTIGATIONS loop) -- these two
+        # decoys are West-specific, so scope the keyword search to West's
+        # own clusters explicitly rather than relying on West happening to
+        # be first in the list.
+        l3_candidates = [c for c in json.loads(l3_path.read_text()) if c.get("region", "West") == "West"]
         billing_cluster = next((c for c in l3_candidates if "account" in " ".join(c["top_terms"]).lower() or "customer" in " ".join(c["top_terms"][:2]).lower()), None)
         if billing_cluster is not None:
             outcomes.append(

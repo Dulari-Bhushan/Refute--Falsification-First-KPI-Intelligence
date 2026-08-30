@@ -75,6 +75,7 @@ TOPIC_CHANGEPOINT_THRESHOLD = 0.6  # topic series are far noisier/sparser than K
 @dataclass
 class TopicCandidate:
     cluster_id: int
+    region: str
     n_tickets: int
     top_terms: list[str]
     representative_text: str
@@ -193,6 +194,7 @@ def generate_candidates(kpi_onset_week: int, region_filter: str = "West") -> lis
         candidates.append(
             TopicCandidate(
                 cluster_id=int(cluster_id),
+                region=region_filter,
                 n_tickets=n,
                 top_terms=top_terms_for_cluster(cluster_tickets_df, tickets["text"]),
                 representative_text=rep_text,
@@ -210,18 +212,28 @@ def generate_candidates(kpi_onset_week: int, region_filter: str = "West") -> lis
 
 
 def main() -> None:
-    KPI_ONSET_WEEK = 32  # West revenue's own L1-detected onset -- see engine/l1_signal.py
-    candidates = generate_candidates(KPI_ONSET_WEEK)
+    # local import: engine/investigations.py pulls in engine/l4_compiler.py,
+    # which this module has no other reason to depend on -- keep it lazy so
+    # generate_candidates() stays usable standalone.
+    from engine.investigations import INVESTIGATIONS
 
-    (DATA_DIR / "l3_topic_candidates.json").write_text(json.dumps([c.__dict__ for c in candidates], indent=2))
+    l1_results = json.loads((DATA_DIR / "l1_signal_results.json").read_text())
+    all_candidates: list[TopicCandidate] = []
+    for region, inv in INVESTIGATIONS.items():
+        l1_entry = next(r for r in l1_results if r["kpi"] == inv["kpi"] and r["region"] == region)
+        candidates = generate_candidates(l1_entry["changepoint_period_estimate"], region_filter=region)
+        all_candidates.extend(candidates)
 
-    print(f"Discovered {len(candidates)} clusters with >= {MIN_CLUSTER_SIZE} tickets (unsupervised, TF-IDF + agglomerative):\n")
-    for c in candidates:
-        flag = "CANDIDATE" if c.became_candidate else "excluded"
-        print(f"[{flag}] cluster {c.cluster_id} (n={c.n_tickets})  top terms: {', '.join(c.top_terms)}")
-        print(f"  changepoint week={c.changepoint_week}  confidence={c.changepoint_confidence}")
-        print(f"  representative ticket: \"{c.representative_text}\"")
-        print(f"  {c.reason}\n")
+        print(f"=== {region} · {inv['kpi']} (onset week {l1_entry['changepoint_period_estimate']}) ===")
+        print(f"Discovered {len(candidates)} clusters with >= {MIN_CLUSTER_SIZE} tickets (unsupervised, TF-IDF + agglomerative):\n")
+        for c in candidates:
+            flag = "CANDIDATE" if c.became_candidate else "excluded"
+            print(f"[{flag}] cluster {c.cluster_id} (n={c.n_tickets})  top terms: {', '.join(c.top_terms)}")
+            print(f"  changepoint week={c.changepoint_week}  confidence={c.changepoint_confidence}")
+            print(f"  representative ticket: \"{c.representative_text}\"")
+            print(f"  {c.reason}\n")
+
+    (DATA_DIR / "l3_topic_candidates.json").write_text(json.dumps([c.__dict__ for c in all_candidates], indent=2))
 
 
 if __name__ == "__main__":

@@ -443,18 +443,31 @@ def estimate_hosted_cost(prompt_tokens: int, completion_tokens: int) -> float:
     return (prompt_tokens / 1000) * HOSTED_API_COST_PER_1K_INPUT_TOKENS + (completion_tokens / 1000) * HOSTED_API_COST_PER_1K_OUTPUT_TOKENS
 
 
-def main() -> None:
+def main(region: str = "West") -> None:
+    # local import: avoids a module-load-time dependency on engine/l4_compiler.py
+    # (engine/investigations.py's own reason for lazy-importing it applies here too)
+    from engine.investigations import INVESTIGATIONS
+
+    if region not in INVESTIGATIONS:
+        raise ValueError(f"Unknown investigation region '{region}' -- must be one of {sorted(INVESTIGATIONS)}.")
+    inv = INVESTIGATIONS[region]
+    kpi = inv["kpi"]
+
     l1_results = json.loads((DATA_DIR / "l1_signal_results.json").read_text())
-    west_revenue = next(r for r in l1_results if r["kpi"] == "revenue" and r["region"] == "West")
+    kpi_result = next(r for r in l1_results if r["kpi"] == kpi and r["region"] == region)
     kpi_context = {
-        "kpi": "revenue",
-        "region": "West",
-        "kpi_onset_week": west_revenue["changepoint_period_estimate"],
-        "movement_pct": west_revenue["business_impact_pct"],
+        "kpi": kpi,
+        "region": region,
+        "kpi_onset_week": kpi_result["changepoint_period_estimate"],
+        "movement_pct": kpi_result["business_impact_pct"],
     }
 
+    # l3_topic_candidates.json now holds every investigation's clusters
+    # (see engine/l3_hypothesise.py) -- scope to THIS region's, or a
+    # Central-context run would generate predicates for West's ticket
+    # clusters (or vice versa) against the wrong KPI context entirely.
     l3_candidates_raw = json.loads((DATA_DIR / "l3_topic_candidates.json").read_text())
-    candidates = [TopicCandidate(**c) for c in l3_candidates_raw if c["became_candidate"]]
+    candidates = [TopicCandidate(**c) for c in l3_candidates_raw if c["became_candidate"] and c.get("region", "West") == region]
 
     from engine.l6_narrate_ledger import get_ledger
 
@@ -545,7 +558,7 @@ def main() -> None:
 
         if not result.accepted:
             continue
-        outcomes = adjudicate_all(predicates=[result.predicate_dict])
+        outcomes = adjudicate_all(role=inv["role"], region=region, predicates=[result.predicate_dict], windows=inv["windows"])
         if not outcomes:
             print(f"  {result.predicate_dict['hypothesis_id']}: could not be adjudicated (panel could not be built).")
             continue
@@ -554,9 +567,7 @@ def main() -> None:
             print(f"  {o.hypothesis_id:<32} [{o.verdict:<12}] {o.reason}")
 
     # --- Tier 3 stretch feature: adversarial challenge against the SURVIVED hypothesis ---
-    from engine.l4_compiler import PREDICATE_FIXTURES
-
-    survived_predicate = next(p for p in PREDICATE_FIXTURES if p["hypothesis_id"] == "h_rep_attrition")
+    survived_predicate = next(p for p in inv["predicates"] if p["hypothesis_id"] == inv["survived_hypothesis_id"])
     print(f"\n=== Adversarial challenge against '{survived_predicate['hypothesis_id']}' (the SURVIVED hypothesis) ===")
     challenge = generate_adversarial_challenge(survived_predicate, kpi_context)
     with telemetry_span(
@@ -576,7 +587,7 @@ def main() -> None:
         print(f"  No valid adversarial challenge produced: {challenge.reason}")
     else:
         print(f"  Challenge: {json.dumps(challenge.predicate_dict, indent=2)}")
-        challenge_outcomes = adjudicate_all(predicates=[challenge.predicate_dict])
+        challenge_outcomes = adjudicate_all(role=inv["role"], region=region, predicates=[challenge.predicate_dict], windows=inv["windows"])
         if challenge_outcomes:
             write_ledger_entries(ledger, run_id, challenge_outcomes)
             for o in challenge_outcomes:

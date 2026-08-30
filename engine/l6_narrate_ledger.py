@@ -734,7 +734,10 @@ def main() -> None:
         from engine.l5_adjudicate import evaluate_precedence_test
 
         west_revenue = next(r for r in l1_results if r["kpi"] == "revenue" and r["region"] == "West")
-        l3_candidates = json.loads(l3_path.read_text())
+        # scoped to West's own clusters -- see the matching comment in
+        # engine/l5_adjudicate.py's main() for why, now that this file holds
+        # every investigation's clusters.
+        l3_candidates = [c for c in json.loads(l3_path.read_text()) if c.get("region", "West") == "West"]
         billing_cluster = next((c for c in l3_candidates if "account" in " ".join(c["top_terms"]).lower()), None)
         if billing_cluster is not None:
             with telemetry_span(ledger, run_id, "L5_precedence_test", is_llm_call=False):

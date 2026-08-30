@@ -1149,11 +1149,17 @@ function initLlmSettings() {
     const btn = document.getElementById("runLlmGenerationBtn");
     const resultEl = document.getElementById("llmGenerationResult");
     const backend = document.querySelector('input[name="llmBackend"]:checked').value;
+    // Runs against whichever investigation is currently selected up top
+    // (Region/KPI selector) -- if that's not one of the real investigations
+    // (e.g. viewing East, which never cleared the gate), falls back to the
+    // primary one rather than erroring, since there's nothing to generate
+    // against for a non-investigated context.
+    const targetRegion = INVESTIGATIONS.some((i) => i.region === STATE.region) ? STATE.region : INVESTIGATION.region;
     btn.disabled = true;
     btn.textContent = backend === "local" ? "Running (first local run can take minutes -- model download + warmup)..." : "Running...";
     resultEl.innerHTML = "";
     try {
-      const res = await fetch("/api/llm-generate/run", { method: "POST" });
+      const res = await fetch(`/api/llm-generate/run?region=${targetRegion}`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
 
@@ -1168,7 +1174,7 @@ function initLlmSettings() {
         })
         .join("");
       resultEl.innerHTML = `
-        <div class="info-note" style="margin-bottom:10px">Backend: <strong>${data.backend}</strong> &mdash; ${data.n_accepted}/${data.n_candidates} candidate topic(s) produced an accepted predicate, now adjudicated through the same L5 pipeline as the templated fixtures. Hypotheses, adversarial-challenge, and telemetry panels above have been refreshed.</div>
+        <div class="info-note" style="margin-bottom:10px">Backend: <strong>${data.backend}</strong> &mdash; ran against <strong>${targetRegion} · Revenue</strong> -- ${data.n_accepted}/${data.n_candidates} candidate topic(s) produced an accepted predicate, now adjudicated through the same L5 pipeline as the templated fixtures. Hypotheses, adversarial-challenge, and telemetry panels above have been refreshed.</div>
         ${rows || '<p class="subtext">No candidate topics to generate for.</p>'}
       `;
 
