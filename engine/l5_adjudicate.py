@@ -76,6 +76,7 @@ class TestOutcome:
     did_effect: float | None
     did_se: float | None
     did_pvalue_raw: float | None
+    mechanism: str | None = None  # the predicate's own plain-English causal claim, carried through to the verdict so the UI can show "what happened" instead of just a hypothesis_id slug
     did_pvalue_bh: float | None = None
     parallel_trends_pvalue: float | None = None
     parallel_trends_ok: bool | None = None
@@ -251,6 +252,7 @@ def adjudicate_all(role: str = "ops_manager_west", region: str = "West", predica
             did_effect=None,
             did_se=None,
             did_pvalue_raw=None,
+            mechanism=predicate.mechanism,
             treatment_sql_hash=panel.attrs.get("treatment_sql_hash"),
             control_sql_hash=panel.attrs.get("control_sql_hash"),
             treatment_sql=panel.attrs.get("treatment_sql"),
@@ -326,7 +328,7 @@ def adjudicate_all(role: str = "ops_manager_west", region: str = "West", predica
     return outcomes
 
 
-def evaluate_precedence_test(hypothesis_id: str, topic_tau: int, topic_confidence: float, kpi_tau: int, kpi_confidence: float) -> TestOutcome:
+def evaluate_precedence_test(hypothesis_id: str, topic_tau: int, topic_confidence: float, kpi_tau: int, kpi_confidence: float, mechanism: str | None = None) -> TestOutcome:
     """The formal falsification test for a "precedence" archetype
     predicate -- kills the hypothesis if the proposed cause's own BOCPD
     changepoint comes AFTER the KPI's. L3 already applies this same check
@@ -373,6 +375,7 @@ def evaluate_precedence_test(hypothesis_id: str, topic_tau: int, topic_confidenc
         did_effect=None,
         did_se=None,
         did_pvalue_raw=None,
+        mechanism=mechanism,
         verdict=verdict,
         reason=reason,
         notes=[f"topic_changepoint_week={topic_tau} (confidence={topic_confidence:.2f}); kpi_changepoint_week={kpi_tau} (confidence={kpi_confidence:.2f})"],
@@ -466,6 +469,7 @@ def evaluate_dose_response_test(predicate_raw: dict, regions: tuple[str, ...] = 
         did_effect=None,
         did_se=None,
         did_pvalue_raw=None,
+        mechanism=predicate.mechanism,
         treatment_sql_hash=",".join(dose_hashes),
         control_sql_hash=",".join(revenue_hashes),
         treatment_sql="\n\n".join(dose_sqls),
@@ -530,6 +534,7 @@ def main() -> None:
                     topic_confidence=billing_cluster["changepoint_confidence"],
                     kpi_tau=west_revenue["changepoint_period_estimate"],
                     kpi_confidence=west_revenue["changepoint_posterior_recent"],
+                    mechanism="A spike in billing/account-service complaints caused customers to reduce spend.",
                 )
             )
 
@@ -549,6 +554,7 @@ def main() -> None:
                     topic_confidence=weather_cluster["changepoint_confidence"],
                     kpi_tau=west_revenue["changepoint_period_estimate"],
                     kpi_confidence=west_revenue["changepoint_posterior_recent"],
+                    mechanism="A severe regional storm disrupted West store traffic and deliveries, reducing revenue.",
                 )
             )
 

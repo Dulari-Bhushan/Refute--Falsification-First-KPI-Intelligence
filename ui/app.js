@@ -372,6 +372,7 @@ function renderHypothesisCards(templated) {
         <div class="verdict-badge ${verdictClass(h.verdict)}">${h.verdict}</div>
       </div>
       <div class="card-archetype">${h.test_archetype} &middot; ${h.region || "West"} · ${humanizeIdentifier(h.kpi || "revenue")}</div>
+      ${h.mechanism ? `<div class="card-mechanism">${h.mechanism}</div>` : ""}
       <div class="card-reason">${h.reason}</div>
       <div class="card-detail">
         ${h.did_effect !== null && h.did_effect !== undefined ? `<div>effect: ${fmtPct(h.did_effect)}</div>` : ""}
@@ -595,7 +596,7 @@ async function renderBrief(role) {
   if (role === "regional_vp") {
     briefEl.innerHTML = `
       <div class="brief-line"><span class="brief-label">Headline</span><div>${STATE.kpiNarrative || ""}</div></div>
-      ${survived ? `<div class="brief-line"><span class="brief-label">Cause</span><div>${humanizeIdentifier(survived.hypothesis_id)}</div></div>` : ""}
+      ${survived ? `<div class="brief-line"><span class="brief-label">Cause</span><div><strong>${humanizeIdentifier(survived.hypothesis_id)}:</strong> ${survived.mechanism || "(no mechanism text on this predicate)"}</div></div>` : ""}
       <div class="brief-line"><span class="brief-label">Tested &amp; ruled out</span><div>${killed.length} alternative(s)${inconclusive.length ? `, ${inconclusive.length} inconclusive` : ""}</div></div>
       ${actionAvailable ? `<div class="brief-line"><span class="brief-label">Next step</span><div>${STATE.action.action.action}</div></div>` : noActionNote}
       ${actionAvailable ? `<div class="brief-line"><span class="brief-label">Confidence</span><div>${STATE.action.action.confidence.split(" -- ")[0]}</div></div>` : ""}
@@ -603,9 +604,9 @@ async function renderBrief(role) {
   } else if (role === "ops_manager_west") {
     briefEl.innerHTML = `
       <div class="brief-line"><span class="brief-label">Movement</span><div>${STATE.kpiNarrative || ""}</div></div>
-      <div class="brief-line"><span class="brief-label">Cause</span><div>${survived ? humanizeIdentifier(survived.hypothesis_id) : "none confirmed"}</div></div>
-      <div class="brief-line"><span class="brief-label">Ruled out</span><div>${killed.map((h) => `${humanizeIdentifier(h.hypothesis_id)} (${h.test_archetype})`).join(", ") || "none"}</div></div>
-      <div class="brief-line"><span class="brief-label">Inconclusive</span><div>${inconclusive.map((h) => humanizeIdentifier(h.hypothesis_id)).join(", ") || "none"}</div></div>
+      <div class="brief-line"><span class="brief-label">Cause</span><div>${survived ? `<strong>${humanizeIdentifier(survived.hypothesis_id)}:</strong> ${survived.mechanism || "(no mechanism text on this predicate)"}` : "none confirmed"}</div></div>
+      <div class="brief-line"><span class="brief-label">Ruled out</span><div>${killed.map((h) => `<strong>${humanizeIdentifier(h.hypothesis_id)}</strong> (${h.test_archetype}) -- ${h.mechanism || "no mechanism text"}`).join("<br>") || "none"}</div></div>
+      <div class="brief-line"><span class="brief-label">Inconclusive</span><div>${inconclusive.map((h) => `<strong>${humanizeIdentifier(h.hypothesis_id)}</strong> -- ${h.mechanism || "no mechanism text"}`).join("<br>") || "none"}</div></div>
       ${actionAvailable ? `<div class="brief-line"><span class="brief-label">Action</span><div>${STATE.action.action.action}</div></div>` : noActionNote}
       ${actionAvailable ? `<div class="brief-line"><span class="brief-label">Owner</span><div>${STATE.action.action.owner}</div></div>` : ""}
     `;
