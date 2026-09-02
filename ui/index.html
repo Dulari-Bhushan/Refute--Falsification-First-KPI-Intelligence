@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>REFUTE -- KPI Intelligence Demo</title>
-<link rel="stylesheet" href="style.css?v=10" />
+<link rel="stylesheet" href="style.css?v=18" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 </head>
@@ -12,7 +12,15 @@
 
 <div class="topbar">
   <div class="brand">
-    <div class="brand-mark">R</div>
+    <div class="brand-mark">
+      <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="REFUTE logo">
+        <rect x="1" y="1" width="30" height="30" rx="9" fill="var(--panel-3)" stroke="var(--border-strong)" stroke-width="1.2"></rect>
+        <line x1="8" y1="10.5" x2="22.5" y2="10.5" stroke="var(--killed)" stroke-width="3" stroke-linecap="round"></line>
+        <line x1="8" y1="16" x2="22.5" y2="16" stroke="var(--killed)" stroke-width="3" stroke-linecap="round"></line>
+        <line x1="8" y1="21.5" x2="16.5" y2="21.5" stroke="var(--survived)" stroke-width="3" stroke-linecap="round"></line>
+        <path d="M18 22.6 L20.6 25.2 L25.2 19.4" fill="none" stroke="var(--survived)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>
+    </div>
     <div class="brand-text">
       <h1>REFUTE <span>falsification-first KPI intelligence</span></h1>
       <div class="tagline">Generates the test that would kill each hypothesis, runs it, publishes only what survives.</div>
