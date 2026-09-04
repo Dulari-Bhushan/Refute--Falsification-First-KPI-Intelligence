@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>REFUTE -- KPI Intelligence Demo</title>
-<link rel="stylesheet" href="style.css?v=22" />
+<link rel="stylesheet" href="style.css?v=23" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 </head>
@@ -146,6 +146,7 @@
   <section class="block reveal" id="sec-hypotheses">
     <div class="block-head"><h2><span class="dot"></span>Hypotheses Tested</h2></div>
     <p class="block-desc">Click a card for the full statistical evidence, including the exact auditable SQL each verdict was computed from.</p>
+    <p class="block-desc" id="hypothesesScopeNote" style="margin-top:-6px"></p>
     <div class="cards" id="hypothesisCards"><div class="loading">Loading&hellip;</div></div>
   </section>
 
@@ -310,6 +311,6 @@
 </main>
 </div>
 
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>

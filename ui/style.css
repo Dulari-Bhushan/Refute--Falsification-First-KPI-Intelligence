@@ -242,25 +242,18 @@ a { color: var(--accent); }
   .side-nav { display: none; }
 }
 
-/* Light theme: a colorful purple-to-pink gradient sidebar, styled after
-   the EduCare-style reference -- white text floating on the gradient,
-   with a frosted-glass pill for the active link. */
+/* Light theme: a clean, neutral panel sidebar -- solid white background,
+   a subtle border, and the SAME accent/text tokens every other light-theme
+   surface already uses (not a special-cased palette), so nav-link hover/
+   active states fall out of the base rules above for free. Replaces an
+   earlier purple-to-pink gradient version that read as too playful/
+   consumer-fintech for an enterprise (Fortune 500 boardroom) context --
+   reserving saturated color for verdict meaning only, same discipline the
+   rest of the app already holds itself to. */
 :root[data-theme="light"] .side-nav {
-  background: linear-gradient(165deg, #7c3aed 0%, #a336d6 35%, #d6499f 68%, #f593c2 100%);
-  border-right: none;
-  box-shadow: 8px 0 30px -14px rgba(124, 41, 176, 0.45);
+  background: var(--panel);
+  border-right: 1px solid var(--border);
 }
-:root[data-theme="light"] .side-nav .nav-group-label { color: rgba(255, 255, 255, 0.62); }
-:root[data-theme="light"] .side-nav .nav-link { color: rgba(255, 255, 255, 0.85); }
-:root[data-theme="light"] .side-nav .nav-link:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
-:root[data-theme="light"] .side-nav .nav-link.active {
-  background: rgba(255, 255, 255, 0.22);
-  color: #fff;
-  border-left-color: rgba(255, 255, 255, 0.9);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35), 0 4px 14px -4px rgba(0, 0, 0, 0.25);
-  text-shadow: none;
-}
-:root[data-theme="light"] .side-nav::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.35); }
 
 main.content {
   flex: 1;

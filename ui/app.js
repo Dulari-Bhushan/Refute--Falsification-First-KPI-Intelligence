@@ -441,6 +441,19 @@ async function renderOverviewGrid() {
 function renderHypothesisCards(templated) {
   const container = document.getElementById("hypothesisCards");
   container.innerHTML = "";
+
+  // This grid is investigation-scoped, not selector-scoped: it always
+  // shows every real investigation's hypotheses (West and Central below),
+  // regardless of which Region/KPI is picked in the topbar -- there's
+  // nothing to filter TO when e.g. "Units Sold" is selected, since that
+  // never cleared L1's gate. Without this note, switching the selector and
+  // seeing this grid NOT change reads as the dashboard being unresponsive
+  // rather than a deliberate scope (a real testing note, not hypothetical).
+  const scopeNote = document.getElementById("hypothesesScopeNote");
+  if (scopeNote) {
+    const list = INVESTIGATIONS.map((i) => `${i.region} · ${humanizeIdentifier(i.kpi)}`).join(" and ");
+    scopeNote.textContent = `Always shows every real investigation (${list}) -- not filtered by the Region/KPI selector above, since there's nothing to test for a movement that never cleared L1's gate.`;
+  }
   templated.forEach((h) => {
     const card = document.createElement("div");
     card.className = `card ${verdictClass(h.verdict).toLowerCase()}`;
