@@ -1,11 +1,16 @@
 """
-One-off, hand-run script (not part of run_pipeline.py) that injects a SECOND,
-independent anomaly into the already-generated synthetic dataset: a
-fulfillment disruption at CENTRAL_DC, affecting Central region revenue from
-week 36 onward. Deliberately does NOT touch West's or East's rows, and does
-NOT re-run data/generate_synthetic_data.py (which would re-roll the RNG and
-risk shifting every number the existing README/GAPS.md/UI narration already
-quotes). Run once; the resulting CSVs become the new checked-in fixtures.
+Runs as a step in run_pipeline.py (right after data/generate_synthetic_data.py)
+and injects a SECOND, independent anomaly into the freshly-generated synthetic
+dataset: a fulfillment disruption at CENTRAL_DC, affecting Central region
+revenue from week 36 onward, plus the support-ticket cluster that narrates it
+(so L3's clustering has something real to discover if a live LLM-generation
+run ever targets Central -- see build_central_dc_tickets() below). Deliberately
+does NOT touch West's or East's rows. Safe to run every pipeline invocation,
+not just once: it's pure deterministic arithmetic/fixed content applied on top
+of data/generate_synthetic_data.py's own seeded (SEED=42), reproducible output
+-- chaining the two always reproduces the exact same calibrated numbers the
+README/GAPS.md/UI narration quote, rather than only the first time someone
+happened to hand-run both in order.
 """
 import pandas as pd
 
@@ -56,3 +61,27 @@ print("Wrote data/synthetic/finance_gl_extract.csv")
 # --- sanity check: confirm week->date mapping for week 40 is indeed October ---
 week40_start = WEEK1_START + pd.Timedelta(days=(40 - 1) * 7)
 print(f"\nWeek 40 starts {week40_start.date()} (confirms it's outside GL's Sept coverage)")
+
+# --- seed the CENTRAL_DC support-ticket cluster this anomaly's narrative
+# depends on -- fixed content, not sampled, so no seed/RNG concerns; the
+# dates (Aug 25 - Sep 1) independently precede the KPI's own week-37 onset,
+# same precedence structure West's decoy/cause clusters rely on. ---
+CENTRAL_DC_TICKETS = [
+    ("T0061", "2025-08-25", "Central", "central_dc_delay", "CENTRAL_DC flagged a warehouse system migration causing order processing delays."),
+    ("T0062", "2025-08-25", "Central", "central_dc_delay", "Customer escalation: Central region deliveries running late this week, ops cites a WMS transition at the DC."),
+    ("T0063", "2025-08-25", "Central", "central_dc_delay", "Multiple complaints about CENTRAL_DC fulfillment slowdowns since the new system rollout."),
+    ("T0064", "2025-08-26", "Central", "central_dc_delay", "Order shipped from CENTRAL_DC is running 5 days late, no tracking update."),
+    ("T0065", "2025-08-27", "Central", "central_dc_delay", "Support queue seeing a cluster of 'where is my order' tickets tied to Central fulfillment."),
+    ("T0066", "2025-08-28", "Central", "central_dc_delay", "Ops flagged recurring CENTRAL_DC dispatch delays tied to the warehouse system cutover."),
+    ("T0067", "2025-09-01", "Central", "central_dc_delay", "Customer asking why Central orders are slower than usual since late August."),
+    ("T0068", "2025-09-01", "Central", "central_dc_delay", "Carrier notified us of continued backlog at the Central distribution center post-migration."),
+]
+
+tickets = pd.read_csv("data/synthetic/support_tickets.csv")
+if (tickets["ticket_id"] == CENTRAL_DC_TICKETS[0][0]).any():
+    print(f"\n{CENTRAL_DC_TICKETS[0][0]} already present in support_tickets.csv -- skipping ticket injection (already run against this file).")
+else:
+    new_tickets = pd.DataFrame(CENTRAL_DC_TICKETS, columns=["ticket_id", "created_at", "region", "topic_seed", "text"])
+    tickets = pd.concat([tickets, new_tickets], ignore_index=True)
+    tickets.to_csv("data/synthetic/support_tickets.csv", index=False)
+    print(f"\nAppended {len(new_tickets)} CENTRAL_DC ticket(s) to data/synthetic/support_tickets.csv")

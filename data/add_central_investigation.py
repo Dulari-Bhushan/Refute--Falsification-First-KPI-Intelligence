@@ -1,15 +1,26 @@
 """
-One-off script: runs the SECOND investigation (Central . revenue, a
-CENTRAL_DC fulfillment disruption -- see data/inject_central_anomaly.py for
-the underlying data) through the REAL L5 adjudication pipeline (identical
+Runs as a step in run_pipeline.py, immediately after engine.l5_adjudicate:
+adjudicates the SECOND investigation (Central . revenue, a CENTRAL_DC
+fulfillment disruption -- see data/inject_central_anomaly.py for the
+underlying data) through the REAL L5 adjudication pipeline (identical
 compile -> panel -> DiD -> parallel-trends -> power-gate -> BH-correction
-treatment as West's investigation gets), then merges the resulting verdicts
-into data/synthetic/l5_verdicts.json and writes matching ledger telemetry.
-Not part of run_pipeline.py -- hand-run once, like the data injection script
-it depends on.
+treatment as West's investigation gets), then MERGES the resulting verdicts
+into whatever engine.l5_adjudicate's own run just wrote to
+data/synthetic/l5_verdicts.json (West-only) and writes matching ledger
+telemetry. Must run after that step, not before -- it reads and appends to
+that file, so running first would just have its merge overwritten a moment
+later by L5's own (West-only) write.
 """
 import json
+import sys
 from pathlib import Path
+
+# Run by run_pipeline.py as `python data/add_central_investigation.py` (a
+# direct script path, matching every other data/ step) -- Python puts this
+# file's own directory (data/) on sys.path, not the repo root, so `from
+# engine...` below fails with ModuleNotFoundError otherwise. Same gotcha as
+# tests/scalability_test.py's; fixed the same way.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from engine.investigations import CENTRAL_PREDICATES, CENTRAL_WINDOWS
 from engine.l5_adjudicate import adjudicate_all

@@ -667,7 +667,7 @@ const PERSONA_SECTION_VISIBILITY = {
   "sec-drift": ["platform_engineer"],
   "sec-security": ["platform_engineer"],
   "sec-audit": ["platform_engineer"],
-  "sec-kg": ["platform_engineer"],
+  "sec-kg": ["ops_manager_west", "platform_engineer"],
 };
 
 function applyPersonaVisibility(role) {

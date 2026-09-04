@@ -477,6 +477,12 @@ section.block { display: grid; gap: 14px; scroll-margin-top: 78px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
 
 .card {
+  /* Grid/flex items default to min-width:auto, so their content's
+     min-content size (here: the badge cluster's unshrinkable width) can
+     force the item wider than its grid track, bleeding into the next
+     card instead of wrapping. min-width:0 lets it actually respect the
+     column it was given. */
+  min-width: 0;
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -490,8 +496,11 @@ section.block { display: grid; gap: 14px; scroll-margin-top: 78px; }
 .card.survived { border-left-color: var(--survived); }
 .card.inconclusive { border-left-color: var(--inconclusive); }
 
-.card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-.card-title { font-size: 13.5px; font-weight: 700; cursor: help; }
+/* flex-wrap so the (non-shrinking) badge cluster drops to its own line
+   below the title on a narrow card instead of squeezing the title down to
+   one word per line while still overflowing the card. */
+.card-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 6px 8px; }
+.card-title { font-size: 13.5px; font-weight: 700; cursor: help; min-width: 0; flex: 1 1 140px; overflow-wrap: break-word; }
 .card.killed .card-title { text-decoration: line-through; color: var(--text-faint); }
 .card.survived .card-title { color: var(--survived); }
 

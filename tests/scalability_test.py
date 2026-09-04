@@ -19,8 +19,18 @@ Run: uv run python tests/scalability_test.py
 
 from __future__ import annotations
 
+import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
+
+# Run directly as `uv run python tests/scalability_test.py` (as documented
+# above and in README.md), the repo root is never on sys.path -- only this
+# file's own directory is, since that's how `python <script>` (as opposed
+# to `python -m package.module`) resolves imports. Without this, `from
+# engine...` below fails with ModuleNotFoundError even though the package
+# is right there one directory up.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 import pandas as pd
