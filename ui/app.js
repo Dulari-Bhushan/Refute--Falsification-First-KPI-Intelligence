@@ -93,7 +93,7 @@ function setTheme(theme, { redraw = true } = {}) {
   applyThemeIcons(theme);
   if (redraw) {
     if (LAST_KPI_DATA) renderKpiChart(LAST_KPI_DATA);
-    if (LAST_CF_DATA) renderCounterfactualChart(LAST_CF_DATA);
+    if (LAST_CF_DATA) renderCounterfactualChart(LAST_CF_DATA, LAST_CF_HISTORY);
     if (LAST_GRAPH_DATA) recolorGraph();
   }
 }
@@ -213,17 +213,81 @@ function renderKpiChart(kpi) {
 // ==================================================================== COUNTERFACTUAL CHART
 let cfChartInstance = null;
 let LAST_CF_DATA = null;
+let LAST_CF_HISTORY = null;
 
-function renderCounterfactualChart(cf) {
+// `history` is the region's trailing OBSERVED weekly revenue points (real
+// data, not projected) -- without it, this chart used to start cold at the
+// projection with no lead-in, which read as a synthetic toy rather than a
+// forward projection off a real trend. `ci_low`/`ci_high` were always
+// computed by build_counterfactual_projection() (from the pre-period's own
+// week-to-week noise) and fetched here, but never actually drawn -- a
+// stretch-feature chart with an unused confidence interval sitting in its
+// own API response undercuts the "we report uncertainty honestly" pitch.
+const HISTORY_WEEKS_SHOWN = 8;
+
+function renderCounterfactualChart(cf, history) {
   LAST_CF_DATA = cf;
+  LAST_CF_HISTORY = history;
   document.getElementById("counterfactualAssumption").textContent = cf.assumption;
   const ctx = document.getElementById("counterfactualChart");
+  const observedColor = cssVar("--text");
   const noActionColor = cssVar("--text-faint");
   const recoveryColor = cssVar("--survived");
   const grid = cssVar("--border-soft");
   const textFaint = cssVar("--text-faint");
 
-  const labels = cf.scenario_no_action.map((d) => `w${d.week}`);
+  const hist = (history || []).filter((d) => d.period <= cf.last_observed_week).slice(-HISTORY_WEEKS_SHOWN);
+  const histLen = hist.length;
+  const lastObservedValue = histLen ? hist[histLen - 1].value : cf.current_level_usd;
+
+  const labels = [...hist.map((d) => d.label || `w${d.period}`), ...cf.scenario_no_action.map((d) => `w${d.week}`)];
+  const observedData = [...hist.map((d) => d.value), ...cf.scenario_no_action.map(() => null)];
+
+  // Bridges each projected series from the last REAL observed point (not
+  // from its own flat/ramped starting value) so the line visually
+  // continues off actual history instead of appearing to start mid-air.
+  function projSeries(scenario, key) {
+    const arr = new Array(Math.max(histLen - 1, 0)).fill(null);
+    arr.push(lastObservedValue);
+    scenario.forEach((d) => arr.push(d[key]));
+    return arr;
+  }
+  const noActionValue = projSeries(cf.scenario_no_action, "value");
+  const noActionCiLow = projSeries(cf.scenario_no_action, "ci_low");
+  const noActionCiHigh = projSeries(cf.scenario_no_action, "ci_high");
+  const recoveryValue = projSeries(cf.scenario_recovery, "value");
+  const recoveryCiLow = projSeries(cf.scenario_recovery, "ci_low");
+  const recoveryCiHigh = projSeries(cf.scenario_recovery, "ci_high");
+
+  const ciHelperLabels = new Set(["no-action CI low", "no-action CI high", "recovery CI low", "recovery CI high"]);
+
+  // Marks where real observed history ends and the projection begins --
+  // same "vertical dashed line + label" pattern as the KPI chart's
+  // changepoint marker (renderKpiChart's cpLinePlugin), for visual
+  // consistency between the two charts on this page.
+  const nowLinePlugin = {
+    id: "nowLine",
+    afterDatasetsDraw(chart) {
+      if (histLen === 0) return;
+      const xScale = chart.scales.x, yScale = chart.scales.y;
+      const x = xScale.getPixelForValue(histLen - 1);
+      const c = chart.ctx;
+      c.save();
+      c.strokeStyle = textFaint;
+      c.setLineDash([3, 3]);
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(x, yScale.top);
+      c.lineTo(x, yScale.bottom);
+      c.stroke();
+      c.setLineDash([]);
+      c.fillStyle = textFaint;
+      c.font = "600 10px Inter, sans-serif";
+      c.textAlign = "right";
+      c.fillText("now →", x - 6, yScale.top + 12);
+      c.restore();
+    },
+  };
 
   if (cfChartInstance) cfChartInstance.destroy();
   cfChartInstance = new Chart(ctx, {
@@ -232,8 +296,19 @@ function renderCounterfactualChart(cf) {
       labels,
       datasets: [
         {
+          label: "Observed",
+          data: observedData,
+          borderColor: observedColor,
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.2,
+          fill: false,
+        },
+        { label: "no-action CI low", data: noActionCiLow, borderColor: "transparent", pointRadius: 0, borderWidth: 0, fill: false },
+        { label: "no-action CI high", data: noActionCiHigh, borderColor: "transparent", pointRadius: 0, borderWidth: 0, fill: "-1", backgroundColor: noActionColor + "1a" },
+        {
           label: "If no action",
-          data: cf.scenario_no_action.map((d) => d.value),
+          data: noActionValue,
           borderColor: noActionColor,
           borderDash: [5, 4],
           borderWidth: 2,
@@ -241,25 +316,16 @@ function renderCounterfactualChart(cf) {
           tension: 0.2,
           fill: false,
         },
+        { label: "recovery CI low", data: recoveryCiLow, borderColor: "transparent", pointRadius: 0, borderWidth: 0, fill: false },
+        { label: "recovery CI high", data: recoveryCiHigh, borderColor: "transparent", pointRadius: 0, borderWidth: 0, fill: "-1", backgroundColor: recoveryColor + "22" },
         {
           label: "If action succeeds",
-          data: cf.scenario_recovery.map((d) => d.value),
+          data: recoveryValue,
           borderColor: recoveryColor,
           borderWidth: 2.25,
           pointRadius: 0,
           tension: 0.2,
-          fill: {
-            target: "+1",
-          },
-          backgroundColor: recoveryColor + "1a",
-        },
-        {
-          label: "recovery CI high",
-          data: cf.scenario_recovery.map((d) => d.ci_high),
-          borderColor: "transparent",
-          pointRadius: 0,
           fill: false,
-          borderWidth: 0,
         },
       ],
     },
@@ -270,7 +336,7 @@ function renderCounterfactualChart(cf) {
       plugins: {
         legend: {
           display: true,
-          labels: { color: textFaint, boxWidth: 14, font: { size: 11 }, filter: (item) => item.text !== "recovery CI high" },
+          labels: { color: textFaint, boxWidth: 14, font: { size: 11 }, filter: (item) => !ciHelperLabels.has(item.text) },
         },
         tooltip: {
           backgroundColor: cssVar("--panel-3"),
@@ -279,7 +345,7 @@ function renderCounterfactualChart(cf) {
           borderColor: cssVar("--border"),
           borderWidth: 1,
           padding: 10,
-          filter: (item) => item.dataset.label !== "recovery CI high",
+          filter: (item) => !ciHelperLabels.has(item.dataset.label) && item.parsed.y !== null,
           callbacks: { label: (item) => `${item.dataset.label}: $${Math.round(item.parsed.y).toLocaleString()}` },
         },
       },
@@ -288,6 +354,7 @@ function renderCounterfactualChart(cf) {
         y: { grid: { color: grid }, border: { display: false }, ticks: { color: textFaint, font: { size: 10.5 }, callback: (v) => `$${Math.round(v / 1000)}k` } },
       },
     },
+    plugins: [nowLinePlugin],
   });
 }
 
@@ -450,6 +517,8 @@ function renderAction(data) {
     : "";
   const backendNote = data.backend === "none"
     ? `No live LLM backend selected -- this is a raw-evidence composition (real numbers, no LLM synthesis). Switch backends in LLM Settings for a full cause-and-action writeup.`
+    : meta.cache_hit
+    ? `Synthesized by ${meta.model || "the configured LLM"} -- served from cache (identical evidence already produced this writeup earlier this session, so nothing was re-generated). Genuinely $0 / ~0ms for this view, not a simulated saving.`
     : `Synthesized live by ${meta.model || "the configured LLM"} from the evidence below${meta.cost_usd ? ` (~$${meta.cost_usd.toFixed(4)})` : ""}.`;
   el.innerHTML = `
     <div class="card-archetype" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
@@ -545,13 +614,16 @@ function renderTelemetry(data) {
   const el = document.getElementById("telemetryStrip");
   el.classList.remove("loading");
   const s = data.summary;
-  el.innerHTML = `<div class="telemetry-strip">
+  const runLabel = data.latest_run_id ? `latest run (${data.latest_run_id})` : "no full pipeline run found in this ledger yet";
+  el.innerHTML = `<p class="subtext" style="margin-bottom:8px">Scoped to the ${runLabel} -- not summed across this ledger's whole history.</p>
+  <div class="telemetry-strip">
     <div class="tstat"><div class="n">${s.total_calls}</div><div class="l">total stages</div></div>
     <div class="tstat"><div class="n">${s.llm_calls}</div><div class="l llm">LLM calls</div></div>
     <div class="tstat"><div class="n">${s.deterministic_calls}</div><div class="l">deterministic</div></div>
     <div class="tstat"><div class="n">${Math.round(s.total_latency_ms)}ms</div><div class="l">total latency</div></div>
     <div class="tstat"><div class="n">$${s.total_cost_usd.toFixed(4)}</div><div class="l">actual cost</div></div>
-  </div>`;
+  </div>
+  <p class="subtext" style="margin-top:10px">Cumulative across every run + interactive call in this ledger's history: ${data.session_summary.total_calls} stages, ${data.session_summary.llm_calls} LLM calls, ${Math.round(data.session_summary.total_latency_ms).toLocaleString()}ms total latency, $${data.session_summary.total_cost_usd.toFixed(4)} total cost.</p>`;
 }
 
 // ==================================================================== persona brief
@@ -862,10 +934,19 @@ function renderAdversarial(data) {
 
 // ==================================================================== KPI + counterfactual panel (region + kpi driven)
 async function loadKpiPanel(region, kpi) {
-  const [kpiData, counterfactual] = await Promise.all([
+  // The counterfactual projection is always revenue-based (build_counterfactual_projection
+  // reads reconciled_weekly.csv's revenue column regardless of which KPI the
+  // top selector shows) -- so its real observed history has to come from a
+  // revenue series specifically, not whichever KPI happens to be selected.
+  // Reuse kpiData's own series when it's already revenue rather than
+  // double-fetching the same data.
+  const needsRevenueHistory = kpi !== "revenue";
+  const [kpiData, counterfactual, revenueForHistory] = await Promise.all([
     getJSON(`/api/kpi-series?region=${region}&kpi=${kpi}`),
     getJSON(`/api/counterfactual?region=${region}`),
+    needsRevenueHistory ? getJSON(`/api/kpi-series?region=${region}&kpi=revenue`) : Promise.resolve(null),
   ]);
+  const revenueHistory = (needsRevenueHistory ? revenueForHistory : kpiData).series;
 
   const label = humanizeIdentifier(kpi);
   const periodWord = kpiData.period_unit === "month" ? "Month" : "Week";
@@ -883,7 +964,7 @@ async function loadKpiPanel(region, kpi) {
   STATE.kpiNarrative = kpiData.narrative;
 
   renderKpiChart(kpiData);
-  renderCounterfactualChart(counterfactual);
+  renderCounterfactualChart(counterfactual, revenueHistory);
 
   // keep dependent panels in sync with the new context
   if (STATE._initialized) {
@@ -1401,6 +1482,87 @@ async function init() {
   window.addEventListener("resize", () => {
     if (kpiChartInstance) kpiChartInstance.resize();
     if (cfChartInstance) cfChartInstance.resize();
+  });
+
+  makePanelsExpandable();
+}
+
+// ==================================================================== panel expand / zoom modal
+// Relocates the real .panel DOM node (not a clone) into a large centered
+// overlay so a card with an internal table/chart/graph doesn't need its
+// own cramped double scrollbars. Everything inside keeps working because
+// it's the same node, just reparented.
+let panelModalBackdrop = null;
+let panelModalCloseBtn = null;
+let panelModalAnchor = null;
+let panelModalActivePanel = null;
+
+function ensurePanelModalScaffold() {
+  if (panelModalBackdrop) return;
+  panelModalBackdrop = document.createElement("div");
+  panelModalBackdrop.className = "panel-modal-backdrop";
+  panelModalCloseBtn = document.createElement("button");
+  panelModalCloseBtn.type = "button";
+  panelModalCloseBtn.className = "panel-modal-close";
+  panelModalCloseBtn.title = "Close";
+  panelModalCloseBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="M6 6l12 12"></path></svg>`;
+  panelModalCloseBtn.addEventListener("click", closePanelModal);
+  panelModalBackdrop.addEventListener("click", (e) => {
+    if (e.target === panelModalBackdrop) closePanelModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && panelModalActivePanel) closePanelModal();
+  });
+  document.body.appendChild(panelModalBackdrop);
+}
+
+function openPanelModal(panel) {
+  ensurePanelModalScaffold();
+  if (panelModalActivePanel) closePanelModal();
+  panelModalAnchor = document.createComment("panel-anchor");
+  panel.parentNode.insertBefore(panelModalAnchor, panel);
+  panelModalActivePanel = panel;
+  panel.appendChild(panelModalCloseBtn);
+  panelModalBackdrop.appendChild(panel);
+  panel.classList.add("panel-modal-active");
+  panelModalBackdrop.classList.add("open");
+  document.body.style.overflow = "hidden";
+  setTimeout(() => {
+    if (kpiChartInstance) kpiChartInstance.resize();
+    if (cfChartInstance) cfChartInstance.resize();
+  }, 50);
+}
+
+function closePanelModal() {
+  if (!panelModalActivePanel) return;
+  const panel = panelModalActivePanel;
+  panel.classList.remove("panel-modal-active");
+  panelModalCloseBtn.remove();
+  panelModalAnchor.parentNode.insertBefore(panel, panelModalAnchor);
+  panelModalAnchor.remove();
+  panelModalAnchor = null;
+  panelModalActivePanel = null;
+  panelModalBackdrop.classList.remove("open");
+  document.body.style.overflow = "";
+  setTimeout(() => {
+    if (kpiChartInstance) kpiChartInstance.resize();
+    if (cfChartInstance) cfChartInstance.resize();
+  }, 50);
+}
+
+function makePanelsExpandable() {
+  document.querySelectorAll(".panel").forEach((panel) => {
+    if (panel.querySelector(":scope > .panel-expand-btn")) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "panel-expand-btn";
+    btn.title = "Expand this card";
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>`;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openPanelModal(panel);
+    });
+    panel.appendChild(btn);
   });
 }
 

@@ -172,6 +172,15 @@ CREATE TABLE IF NOT EXISTS llm_predicate_cache (
     created_at TEXT NOT NULL,
     last_hit_at TEXT
 );
+CREATE TABLE IF NOT EXISTS llm_action_cache (
+    cache_key TEXT PRIMARY KEY,
+    model TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    meta_json TEXT NOT NULL,
+    hit_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    last_hit_at TEXT
+);
 """
 
 

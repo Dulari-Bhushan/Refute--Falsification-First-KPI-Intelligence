@@ -56,22 +56,22 @@
 }
 
 :root[data-theme="light"] {
-  /* Soft pastel fintech-dashboard identity: warm cream canvas with a
-     peach/lavender glow, crisp white floating cards, a vivid indigo-violet
-     primary accent paired with a warm coral secondary for gradients, and
-     candy-bright verdict colors (coral / mint / marigold) standing out
-     against white the way they do against the reference dashboards'
-     white cards. killed/survived/inconclusive remain the ONLY colors that
-     carry verdict meaning anywhere in the app. */
-  --bg: #fbf3ec;
-  --page: #fbf3ec;
+  /* Soft pastel fintech-dashboard identity: a very light pink canvas,
+     crisp white floating cards, a vivid indigo-violet primary accent
+     paired with a warm coral secondary for gradients, and candy-bright
+     verdict colors (coral / mint / marigold) standing out against white
+     the way they do against the reference dashboards' white cards.
+     killed/survived/inconclusive remain the ONLY colors that carry
+     verdict meaning anywhere in the app. */
+  --bg: #fdf0f4;
+  --page: #fdf0f4;
   --panel: #ffffff;
-  --panel-2: #fdf7f1;
-  --panel-3: #f6ebe0;
+  --panel-2: #fdf3f6;
+  --panel-3: #fbe6ee;
   --panel-raised: #ffffff;
-  --border: #f0e2d2;
-  --border-soft: #f5ebe0;
-  --border-strong: #ddc8ac;
+  --border: #f7dde6;
+  --border-soft: #fbebf0;
+  --border-strong: #e6b9cd;
   --text: #26202f;
   --text-dim: #6b6178;
   --text-faint: #9c92a3;
@@ -120,9 +120,9 @@ body {
 
 :root[data-theme="light"] body {
   background:
-    radial-gradient(1100px 520px at 12% -10%, rgba(255, 138, 92, 0.16), transparent 60%),
-    radial-gradient(900px 460px at 90% 4%, rgba(124, 92, 255, 0.12), transparent 58%),
-    radial-gradient(1000px 600px at 50% 115%, rgba(34, 181, 140, 0.08), transparent 60%),
+    radial-gradient(1100px 520px at 12% -10%, rgba(255, 105, 155, 0.16), transparent 60%),
+    radial-gradient(900px 460px at 90% 4%, rgba(168, 85, 247, 0.13), transparent 58%),
+    radial-gradient(1000px 600px at 50% 115%, rgba(244, 114, 182, 0.10), transparent 60%),
     var(--page);
 }
 
@@ -241,6 +241,26 @@ a { color: var(--accent); }
 @media (max-width: 1080px) {
   .side-nav { display: none; }
 }
+
+/* Light theme: a colorful purple-to-pink gradient sidebar, styled after
+   the EduCare-style reference -- white text floating on the gradient,
+   with a frosted-glass pill for the active link. */
+:root[data-theme="light"] .side-nav {
+  background: linear-gradient(165deg, #7c3aed 0%, #a336d6 35%, #d6499f 68%, #f593c2 100%);
+  border-right: none;
+  box-shadow: 8px 0 30px -14px rgba(124, 41, 176, 0.45);
+}
+:root[data-theme="light"] .side-nav .nav-group-label { color: rgba(255, 255, 255, 0.62); }
+:root[data-theme="light"] .side-nav .nav-link { color: rgba(255, 255, 255, 0.85); }
+:root[data-theme="light"] .side-nav .nav-link:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+:root[data-theme="light"] .side-nav .nav-link.active {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  border-left-color: rgba(255, 255, 255, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35), 0 4px 14px -4px rgba(0, 0, 0, 0.25);
+  text-shadow: none;
+}
+:root[data-theme="light"] .side-nav::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.35); }
 
 main.content {
   flex: 1;
@@ -609,3 +629,83 @@ input[type="text"]:focus, input[type="search"]:focus, input[type="password"]:foc
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+/* ============================================================ PANEL EXPAND / ZOOM MODAL
+   Any .panel can be blown up into a large centered overlay so a card with
+   an internal table or chart doesn't need its own cramped double
+   scrollbars -- the real DOM node is relocated into the modal (not
+   cloned), so every button/table/chart/graph inside keeps working. */
+.panel { position: relative; }
+.panel-expand-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 5;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text-faint);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s var(--ease), color 0.15s var(--ease), transform 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+.panel-expand-btn svg { width: 15px; height: 15px; }
+.panel-expand-btn:hover { border-color: var(--accent); color: var(--accent); box-shadow: var(--shadow-accent); transform: translateY(-1px); }
+
+.panel-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4vh 4vw;
+  background: color-mix(in srgb, var(--bg) 55%, black 25%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s var(--ease);
+}
+.panel-modal-backdrop.open { opacity: 1; pointer-events: auto; }
+
+.panel-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 5;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s var(--ease), color 0.15s var(--ease);
+}
+.panel-modal-close svg { width: 16px; height: 16px; }
+.panel-modal-close:hover { border-color: var(--killed); color: var(--killed); }
+
+.panel.panel-modal-active {
+  max-width: min(1200px, 92vw);
+  max-height: 90vh;
+  width: 100%;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+  transform: none !important;
+  animation: panelModalIn 0.2s var(--ease);
+}
+.panel.panel-modal-active .panel-expand-btn { display: none; }
+.panel.panel-modal-active .table-scroll { max-height: 62vh; }
+@keyframes panelModalIn { from { opacity: 0; transform: scale(0.97) !important; } to { opacity: 1; transform: scale(1) !important; } }
+
+@media (max-width: 640px) {
+  .panel-expand-btn { display: none; }
+}

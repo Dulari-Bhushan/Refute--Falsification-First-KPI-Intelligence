@@ -20,6 +20,7 @@ Run: uv run uvicorn api.main:app --reload
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import asdict
 from pathlib import Path
@@ -196,8 +197,38 @@ def action_recommendation(region: str = "West"):
     return generate_action_recommendation(region)
 
 
+PIPELINE_RUN_ID_RE = re.compile(r"^[0-9a-f]{8}$")
+
+
+def _summarize_telemetry(rows: list[dict]) -> dict:
+    total_llm = sum(1 for r in rows if r["is_llm_call"])
+    return {
+        "total_calls": len(rows),
+        "llm_calls": total_llm,
+        "deterministic_calls": len(rows) - total_llm,
+        "total_latency_ms": sum(r["latency_ms"] for r in rows),
+        "total_cost_usd": sum(r["estimated_cost_usd"] for r in rows),
+    }
+
+
 @app.get("/api/telemetry")
 def telemetry():
+    """The `telemetry` table is genuinely append-only across every
+    `run_pipeline.py` invocation AND every interactive UI call (an action
+    recommendation, a live-LLM-generation click) -- that's by design, it's
+    the ledger's own audit trail. Summing ALL of it as a single "Total
+    latency" is misleading: on a dev machine with dozens of historical
+    calls behind it, that sum can run into the hundreds of thousands of ms,
+    which flatly contradicts the README's own sub-60s end-to-end claim --
+    not because the pipeline is slow, but because the number being shown
+    was never "one run" to begin with. `summary` below is scoped to the
+    most recent actual `run_pipeline.py` execution (identifiable by its
+    run_id: a bare 8-hex-char uuid4 slice, see l6_narrate_ledger.py's
+    main() -- distinct on purpose from ad-hoc UI run_ids like
+    "action-West-<ts>" or "llm-<ts>"), so the headline number is honestly
+    explicable. `session_summary` keeps the full historical sum available
+    for anyone who wants it, clearly labeled as cumulative rather than
+    conflated with "how fast was this run.\""""
     ledger_path = DATA_DIR / "ledger.sqlite"
     if not ledger_path.exists():
         raise HTTPException(404, "ledger.sqlite not found -- run the pipeline first.")
@@ -205,16 +236,16 @@ def telemetry():
     conn.row_factory = sqlite3.Row
     rows = [dict(r) for r in conn.execute("SELECT * FROM telemetry ORDER BY id DESC LIMIT 200").fetchall()]
     conn.close()
-    total_llm = sum(1 for r in rows if r["is_llm_call"])
+
+    pipeline_run_ids = [r["run_id"] for r in rows if PIPELINE_RUN_ID_RE.match(r["run_id"] or "")]
+    latest_run_id = pipeline_run_ids[0] if pipeline_run_ids else None
+    latest_run_rows = [r for r in rows if r["run_id"] == latest_run_id] if latest_run_id else rows
+
     return {
         "rows": rows,
-        "summary": {
-            "total_calls": len(rows),
-            "llm_calls": total_llm,
-            "deterministic_calls": len(rows) - total_llm,
-            "total_latency_ms": sum(r["latency_ms"] for r in rows),
-            "total_cost_usd": sum(r["estimated_cost_usd"] for r in rows),
-        },
+        "latest_run_id": latest_run_id,
+        "summary": _summarize_telemetry(latest_run_rows),
+        "session_summary": _summarize_telemetry(rows),
     }
 
 

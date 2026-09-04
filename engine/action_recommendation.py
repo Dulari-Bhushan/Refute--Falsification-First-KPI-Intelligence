@@ -44,8 +44,11 @@ works for ANY investigation registered in engine/investigations.py:
 
 from __future__ import annotations
 
+import hashlib
 import json
+import sqlite3
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -335,6 +338,67 @@ def _call_local_action(messages: list[dict]) -> tuple[str, int, int, float]:
 
 
 # --------------------------------------------------------------------------
+# Ledger-backed cache -- same pattern as engine.l4_llm_generation's
+# llm_predicate_cache, applied here because this endpoint had the identical
+# problem that one was built to solve: without it, switching the Region/KPI
+# selector back and forth (or just reloading the page) re-ran a fresh LLM
+# generation every time, at real GPU/API cost, and -- because nothing pins
+# the model's sampling -- produced VISIBLY DIFFERENT wording/numbers for the
+# exact same investigation on every call. Keyed on which hypotheses actually
+# survived (and their effect sizes/p-values) plus the operational-capacity
+# numbers, so it invalidates itself automatically the moment the underlying
+# evidence changes -- never a stale cache masking a real update.
+# --------------------------------------------------------------------------
+
+
+def action_cache_key(region: str, evidence: dict, operational_context: dict | None, config: dict) -> str:
+    model_identity = config["openrouter_model"] if config["backend"] == "openrouter" else ("none" if config["backend"] == "none" else "local")
+    survived_fingerprint = sorted(
+        (h["hypothesis_id"], round(h.get("did_effect") or 0, 4), round(h.get("did_pvalue_bh") if h.get("did_pvalue_bh") is not None else 1, 4))
+        for h in evidence["survived"]
+    )
+    payload = json.dumps(
+        {
+            "region": region,
+            "kpi": evidence["kpi"],
+            "survived": survived_fingerprint,
+            "operational_context": operational_context,
+            # backend+model included deliberately -- switching backends
+            # should generate fresh, never silently serve a different
+            # backend's cached output.
+            "backend": config["backend"],
+            "model": model_identity,
+        },
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()[:24]
+
+
+def _lookup_action_cache(ledger: sqlite3.Connection, cache_key: str) -> dict | None:
+    ledger.row_factory = sqlite3.Row
+    row = ledger.execute("SELECT * FROM llm_action_cache WHERE cache_key = ?", (cache_key,)).fetchone()
+    ledger.row_factory = None
+    return dict(row) if row else None
+
+
+def _record_action_cache_hit(ledger: sqlite3.Connection, cache_key: str) -> None:
+    ledger.execute(
+        "UPDATE llm_action_cache SET hit_count = hit_count + 1, last_hit_at = ? WHERE cache_key = ?",
+        (datetime.now(timezone.utc).isoformat(), cache_key),
+    )
+    ledger.commit()
+
+
+def _store_action_cache(ledger: sqlite3.Connection, cache_key: str, model: str | None, parsed: dict, meta: dict) -> None:
+    ledger.execute(
+        "INSERT OR REPLACE INTO llm_action_cache (cache_key, model, result_json, meta_json, hit_count, created_at, last_hit_at) VALUES (?,?,?,?,?,?,?)",
+        (cache_key, model or "none", json.dumps(parsed), json.dumps(meta), 0, datetime.now(timezone.utc).isoformat(), None),
+    )
+    ledger.commit()
+
+
+# --------------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------------
 
@@ -363,9 +427,23 @@ def generate_action_recommendation(region: str) -> dict:
     config = get_llm_config()
     backend = config["backend"]
     user_prompt = build_action_user_prompt(evidence, operational_context)
-    meta = {"backend": backend, "model": None, "prompt_tokens": 0, "completion_tokens": 0, "latency_ms": 0.0, "cost_usd": 0.0}
+    meta = {"backend": backend, "model": None, "prompt_tokens": 0, "completion_tokens": 0, "latency_ms": 0.0, "cost_usd": 0.0, "cache_hit": False}
 
-    if backend == "none":
+    ledger = get_ledger()
+    cache_key = action_cache_key(region, evidence, operational_context, config)
+    cached = _lookup_action_cache(ledger, cache_key)
+
+    if cached is not None:
+        # Same investigation state as a prior call -- serve the identical
+        # recommendation instead of a fresh, differently-worded LLM call.
+        # Genuinely $0 tokens / ~0 latency for THIS call, not a simulated
+        # saving (see the module-level comment on the cache functions above).
+        _record_action_cache_hit(ledger, cache_key)
+        parsed = json.loads(cached["result_json"])
+        meta.update(json.loads(cached["meta_json"]))
+        meta["cache_hit"] = True
+        meta["model"] = cached["model"] if cached["model"] != "none" else None
+    elif backend == "none":
         parsed = _fallback_action(evidence, primary, operational_context)
     else:
         messages = [{"role": "system", "content": ACTION_SYSTEM_PROMPT}, {"role": "user", "content": user_prompt}]
@@ -392,13 +470,15 @@ def generate_action_recommendation(region: str) -> dict:
         except Exception as e:  # noqa: BLE001 -- an LLM call/parse failure degrades to the honest fallback, never a 500
             parsed = _fallback_action(evidence, primary, operational_context, note=f"Live LLM call failed ({e}); showing raw-evidence composition instead.")
 
-    ledger = get_ledger()
+        if meta["model"] is not None:
+            _store_action_cache(ledger, cache_key, meta["model"], parsed, meta)
+
     run_id = f"action-{region}-{int(time.time())}"
     with telemetry_span(
         ledger, run_id, f"L6_action_recommendation_{region}",
-        is_llm_call=backend != "none" and meta["model"] is not None,
+        is_llm_call=backend != "none" and meta["model"] is not None and not meta["cache_hit"],
         model=meta["model"], tokens_in=meta["prompt_tokens"], tokens_out=meta["completion_tokens"],
-        cost_usd=meta["cost_usd"], override_latency_ms=meta["latency_ms"],
+        cost_usd=meta["cost_usd"] if not meta["cache_hit"] else 0.0, override_latency_ms=meta["latency_ms"] if not meta["cache_hit"] else 0.0,
     ):
         pass
     ledger.close()
