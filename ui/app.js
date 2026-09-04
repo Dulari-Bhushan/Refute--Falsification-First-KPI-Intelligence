@@ -57,6 +57,17 @@ function verdictClass(v) {
   return { KILLED: "killed", SURVIVED: "survived", INCONCLUSIVE: "inconclusive" }[v] || "";
 }
 
+// Renders a small inline failure notice inside ONE panel's own container,
+// in place of whatever it was showing (a skeleton, "Loading…", or stale
+// content) -- used by init()'s per-job error handling so one endpoint
+// failing never looks like the whole dashboard is broken.
+function renderPanelError(elId, label, err) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.classList.remove("loading");
+  el.innerHTML = `<p class="subtext" style="color:var(--killed)">Couldn't load ${label} -- this panel failed independently; the rest of the dashboard is unaffected. ${err?.message ? `(${err.message})` : ""}</p>`;
+}
+
 // KPIs are on very different scales/units -- revenue is USD, units_sold is a
 // plain count, marketing_attributed_revenue_share is a 0-1 fraction. A single
 // "$Xk" formatter applied to all three crushes units_sold/share into
@@ -626,6 +637,54 @@ function renderTelemetry(data) {
   <p class="subtext" style="margin-top:10px">Cumulative across every run + interactive call in this ledger's history: ${data.session_summary.total_calls} stages, ${data.session_summary.llm_calls} LLM calls, ${Math.round(data.session_summary.total_latency_ms).toLocaleString()}ms total latency, $${data.session_summary.total_cost_usd.toFixed(4)} total cost.</p>`;
 }
 
+// ==================================================================== persona-scoped page layout
+// The three personas were previously only cosmetic on the Narrated Brief
+// panel -- everything else on the page (Knowledge Graph, Entitlement Audit
+// Log, Methods Breakdown, LLM Backend Settings, ...) showed to every role
+// regardless of tab, so a Leader had to scroll past a full technical audit
+// trail to reach their own headline+action summary. This mirrors the real,
+// already-existing distinction the backend makes for persona content
+// (see simulate_delivery()'s "headline + action, no statistical detail" /
+// "full evidence chain" / "full statistical + methodological audit"
+// per-role descriptions in engine/l6_narrate_ledger.py) as actual page
+// structure, not just brief-panel wording: Leader sees the headline/action
+// tier, Manager adds the falsification evidence, Engineer adds the
+// technical/governance/audit tier on top of that.
+const PERSONA_SECTION_VISIBILITY = {
+  "sec-overview": ["regional_vp", "ops_manager_west", "platform_engineer"],
+  "sec-priority": ["regional_vp", "ops_manager_west", "platform_engineer"],
+  "sec-action": ["regional_vp", "ops_manager_west", "platform_engineer"],
+  "sec-alerts": ["regional_vp", "ops_manager_west", "platform_engineer"],
+  "sec-movements": ["ops_manager_west", "platform_engineer"],
+  "sec-hypotheses": ["ops_manager_west", "platform_engineer"],
+  "sec-adversarial": ["ops_manager_west", "platform_engineer"],
+  "contradictionSection": ["ops_manager_west", "platform_engineer"],
+  "sec-trust": ["ops_manager_west", "platform_engineer"],
+  "sec-feedback": ["ops_manager_west", "platform_engineer"],
+  "sec-methods": ["platform_engineer"],
+  "sec-llm": ["platform_engineer"],
+  "sec-calibration": ["platform_engineer"],
+  "sec-drift": ["platform_engineer"],
+  "sec-security": ["platform_engineer"],
+  "sec-audit": ["platform_engineer"],
+  "sec-kg": ["platform_engineer"],
+};
+
+function applyPersonaVisibility(role) {
+  Object.entries(PERSONA_SECTION_VISIBILITY).forEach(([id, allowedRoles]) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle("persona-hidden", !allowedRoles.includes(role));
+  });
+  // Hides the sidebar link to a section this persona can't see -- clicking
+  // through to an empty spot would be more confusing than not showing the
+  // link at all. Sections with no entry above (none currently) are treated
+  // as visible to everyone, so their nav links are always shown.
+  document.querySelectorAll(".nav-link").forEach((link) => {
+    const allowedRoles = PERSONA_SECTION_VISIBILITY[link.dataset.target];
+    link.classList.toggle("nav-link-hidden", !!allowedRoles && !allowedRoles.includes(role));
+  });
+}
+
 // ==================================================================== persona brief
 async function renderBrief(role) {
   const briefEl = document.getElementById("briefContent");
@@ -910,7 +969,7 @@ function renderAlerts(data) {
 
 // ==================================================================== adversarial challenge
 function renderAdversarial(data) {
-  const section = document.getElementById("adversarialSection");
+  const section = document.getElementById("sec-adversarial");
   const el = document.getElementById("adversarialContent");
   el.classList.remove("loading");
   if (!data.challenges || data.challenges.length === 0) {
@@ -1371,49 +1430,57 @@ function initLlmSettings() {
   });
 }
 
+// One flaky endpoint must never take the whole dashboard down with it.
+// Each entry fetches/renders independently inside its own try/catch; a
+// failure logs to console and leaves a small inline error in THAT panel
+// only (renderPanelError), while every other panel still renders normally
+// from its own successful data. Run via Promise.allSettled below so init()
+// itself can never reject because of one bad job.
+function initJobs() {
+  return [
+    { label: "the KPI chart", run: () => loadKpiPanel(STATE.region, STATE.kpi), onFail: () => { document.getElementById("kpiNarrative").textContent = "Couldn't load this KPI's data -- try switching Region/KPI above, or reload."; document.getElementById("kpiValue").textContent = "—"; } },
+    { label: "the investigation tag", run: loadInvestigationTag },
+    { label: "hypotheses", run: () => getJSON("/api/hypotheses"), onOk: (d) => { STATE.hypotheses = d.templated; renderHypothesisCards(d.templated); }, onFail: () => renderPanelError("hypothesisCards", "hypotheses") },
+    { label: "the recommended action", run: () => getJSON("/api/action-recommendation"), onOk: (d) => { STATE.action = d; renderAction(d); }, onFail: () => renderPanelError("actionContent", "the recommended action") },
+    { label: "evidence", run: () => getJSON("/api/evidence"), onOk: (d) => renderFreshness(d.reconciliation), onFail: () => renderPanelError("freshnessTable", "source freshness") },
+    { label: "telemetry", run: () => getJSON("/api/telemetry"), onOk: renderTelemetry, onFail: () => renderPanelError("telemetryStrip", "telemetry") },
+    { label: "the methods breakdown", run: () => getJSON("/api/methods-breakdown"), onOk: renderMethodsBreakdown, onFail: () => renderPanelError("methodsBreakdown", "the methods breakdown") },
+    { label: "adversarial challenges", run: () => getJSON("/api/adversarial-challenges"), onOk: renderAdversarial },
+    { label: "the priority queue", run: () => getJSON("/api/priorities"), onOk: (d) => { STATE.priorities = d; renderPriorities(d); }, onFail: () => renderPanelError("priorityQueue", "the priority queue") },
+    { label: "contradictions", run: () => getJSON("/api/contradictions"), onOk: renderContradiction },
+    { label: "the calibration report", run: () => getJSON("/api/calibration-demo"), onOk: renderCalibration, onFail: () => renderPanelError("calibrationContent", "the calibration report") },
+    { label: "drift monitoring", run: () => getJSON("/api/drift"), onOk: renderDrift, onFail: () => renderPanelError("driftContent", "drift monitoring") },
+    { label: "the domain security check", run: renderDomainCheck, onFail: () => renderPanelError("domainCheckContent", "the domain security check") },
+    { label: "the entitlement audit log", run: renderEntitlementLog, onFail: () => renderPanelError("entitlementLogContent", "the entitlement audit log") },
+    { label: "delivery routing", run: renderDeliveryLog, onFail: () => renderPanelError("deliveryLogContent", "delivery routing") },
+    { label: "the knowledge graph", run: initKnowledgeGraph },
+    { label: "proactive alerts", run: () => getJSON("/api/alerts"), onOk: renderAlerts, onFail: () => renderPanelError("alertsContent", "proactive alerts") },
+    { label: "the movements overview", run: renderOverviewGrid, onFail: () => renderPanelError("overviewGrid", "the movements overview") },
+  ];
+}
+
+async function runInitJobs(jobs) {
+  await Promise.allSettled(
+    jobs.map(async (job) => {
+      try {
+        const data = await job.run();
+        job.onOk?.(data);
+      } catch (e) {
+        console.error(`Failed to load ${job.label}:`, e);
+        job.onFail?.(e);
+      }
+    })
+  );
+}
+
 async function init() {
   initTheme();
+  applyPersonaVisibility(STATE.role); // before first paint settles -- no flash of Engineer-only sections for the default Leader view
   initNavAndReveal(); // wired up before any data fetches -- a failed API call must never leave sections permanently invisible
 
-  const [, , hypData, action, evidence, telemetry, methods, adversarial, priorities, contradictions, calibration, drift, alerts] = await Promise.all([
-    loadKpiPanel(STATE.region, STATE.kpi),
-    loadInvestigationTag(),
-    getJSON("/api/hypotheses"),
-    getJSON("/api/action-recommendation"),
-    getJSON("/api/evidence"),
-    getJSON("/api/telemetry"),
-    getJSON("/api/methods-breakdown"),
-    getJSON("/api/adversarial-challenges"),
-    getJSON("/api/priorities"),
-    getJSON("/api/contradictions"),
-    getJSON("/api/calibration-demo"),
-    getJSON("/api/drift"),
-    getJSON("/api/alerts"),
-  ]);
+  await runInitJobs(initJobs());
 
-  STATE.hypotheses = hypData.templated;
-  renderHypothesisCards(hypData.templated);
-
-  STATE.action = action;
-  renderAction(action);
-
-  renderFreshness(evidence.reconciliation);
-  renderTelemetry(telemetry);
-  renderMethodsBreakdown(methods);
-  renderAdversarial(adversarial);
-  STATE.priorities = priorities;
-  renderPriorities(priorities);
-  renderContradiction(contradictions);
-  renderCalibration(calibration);
-  renderDrift(drift);
-  renderDomainCheck();
-  renderEntitlementLog();
-  renderDeliveryLog();
-  initKnowledgeGraph();
-  renderAlerts(alerts);
-  renderOverviewGrid();
-
-  await renderBrief(STATE.role);
+  await renderBrief(STATE.role).catch((e) => console.error("Failed to render the narrated brief:", e));
   STATE._initialized = true;
 
   document.getElementById("regionSelect").value = STATE.region;
@@ -1432,6 +1499,7 @@ async function init() {
       document.querySelectorAll(".persona-tab").forEach((t) => t.classList.remove("active"));
       tab.classList.add("active");
       STATE.role = tab.dataset.role;
+      applyPersonaVisibility(STATE.role);
       await renderBrief(STATE.role);
     });
   });

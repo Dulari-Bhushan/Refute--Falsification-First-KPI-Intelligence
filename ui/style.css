@@ -709,3 +709,11 @@ input[type="text"]:focus, input[type="search"]:focus, input[type="password"]:foc
 @media (max-width: 640px) {
   .panel-expand-btn { display: none; }
 }
+
+/* ============================================================ PERSONA-SCOPED LAYOUT
+   !important beats the inline style="display:none"/"" that a couple of
+   these sections (adversarial challenge, contradiction check) also get
+   toggled between by their own data-presence logic -- persona visibility
+   is the outer gate, data-presence decides within that. */
+.persona-hidden { display: none !important; }
+.nav-link.nav-link-hidden { display: none; }
