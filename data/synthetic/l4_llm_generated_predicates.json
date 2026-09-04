@@ -1,1 +1,147 @@
-[]
+[
+  {
+    "cluster_id": 1,
+    "top_terms": [
+      "positive",
+      "feedback",
+      "category",
+      "feedback packaging",
+      "generally positive",
+      "sustainability generally"
+    ],
+    "accepted": true,
+    "predicate": {
+      "hypothesis_id": "h_support_ticket_cluster_effectiveness",
+      "mechanism": "A positive feedback cluster related to the Home product category may have indirectly led to decreased revenue in the West region due to improved customer satisfaction and potential shifts in purchasing behavior towards other regions.",
+      "test_archetype": "specificity",
+      "treatment": {
+        "dim": "product_category",
+        "in": [
+          "Home"
+        ]
+      },
+      "control": {
+        "dim": "product_category",
+        "in": [
+          "Electronics",
+          "Apparel",
+          "Accessories"
+        ]
+      },
+      "outcome": {
+        "metric": "revenue",
+        "expect": "decline"
+      },
+      "temporal": {
+        "cause_onset": "2023-01-19",
+        "kpi_onset": "2023-03-22"
+      },
+      "refutes_if": {
+        "condition": "The revenue in the West region does not decline following the onset of the support ticket cluster.",
+        "rationale": "If the revenue in the West region does not decline, it would suggest that the positive feedback cluster did not have an effect on the purchasing behavior in the West region."
+      }
+    },
+    "reason": "Accepted on attempt 1 (backend=local).",
+    "prompt_tokens": 576,
+    "completion_tokens": 231,
+    "latency_ms": 15737.826100012171,
+    "cache_hit": false
+  },
+  {
+    "cluster_id": 2,
+    "top_terms": [
+      "competitor",
+      "new",
+      "customer",
+      "accessories",
+      "customer asked",
+      "asked"
+    ],
+    "accepted": true,
+    "predicate": {
+      "hypothesis_id": "h_ticket_churn_cause",
+      "mechanism": "A sudden competitor launch event led to customer churn, resulting in decreased revenue in the WEST_DC fulfillment center.",
+      "test_archetype": "specificity",
+      "treatment": {
+        "dim": "rep_id",
+        "in": [
+          "W1",
+          "W2",
+          "W3",
+          "W4"
+        ]
+      },
+      "control": {
+        "dim": "rep_id",
+        "in": [
+          "W5",
+          "W6"
+        ]
+      },
+      "outcome": {
+        "metric": "revenue",
+        "expect": "decline"
+      },
+      "temporal": {
+        "cause_onset": "2023-07-31",
+        "kpi_onset": "2023-08-29"
+      },
+      "refutes_if": {
+        "condition": "The revenue in the WEST_DC does not decline starting week 32.",
+        "rationale": "If the revenue in the WEST_DC does not decline starting week 32, it would contradict the mechanism that a competitor's new product launch caused customer churn and subsequently affected revenue in that region."
+      }
+    },
+    "reason": "Accepted on attempt 1 (backend=local).",
+    "prompt_tokens": 579,
+    "completion_tokens": 228,
+    "latency_ms": 9070.349000001443,
+    "cache_hit": false
+  },
+  {
+    "cluster_id": 3,
+    "top_terms": [
+      "west",
+      "carrier",
+      "west_dc",
+      "delivery",
+      "west region",
+      "region"
+    ],
+    "accepted": true,
+    "predicate": {
+      "hypothesis_id": "h_ticket_delivery_delay",
+      "mechanism": "The delay in order shipments from the WEST_DC fulfillment center, reported in the support tickets, is likely causing a decline in revenue in the West region.",
+      "test_archetype": "specificity",
+      "treatment": {
+        "dim": "fulfillment_center",
+        "in": [
+          "WEST_DC"
+        ]
+      },
+      "control": {
+        "dim": "fulfillment_center",
+        "in": [
+          "EAST_DC",
+          "CENTRAL_DC"
+        ]
+      },
+      "outcome": {
+        "metric": "revenue",
+        "expect": "decline"
+      },
+      "temporal": {
+        "cause_onset": "2023-03-31",
+        "kpi_onset": "2023-04-29"
+      },
+      "refutes_if": {
+        "condition": "Revenue in the West region shows an increase or remains stable during the period when orders from WEST_DC are delayed",
+        "rationale": "If revenue in the West region does not decline or increases during the time when orders from WEST_DC are delayed, it would contradict the mechanism that the delay in WEST_DC is causing the decline in revenue."
+      }
+    },
+    "reason": "Accepted on attempt 1 (backend=local).",
+    "prompt_tokens": 584,
+    "completion_tokens": 237,
+    "latency_ms": 9178.516299987677,
+    "cache_hit": false
+  }
+]

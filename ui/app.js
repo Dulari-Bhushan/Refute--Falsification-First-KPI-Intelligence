@@ -972,11 +972,18 @@ function renderAdversarial(data) {
   const section = document.getElementById("sec-adversarial");
   const el = document.getElementById("adversarialContent");
   el.classList.remove("loading");
+  // Previously this section vanished entirely (display:none) when empty --
+  // which, combined with the sidebar nav link, made clicking "Adversarial
+  // Challenge" look like a dead link pointing at nothing. It now always
+  // stays visible and explains itself instead: this Tier 3 feature only
+  // has something to show once a live LLM generation run has actually
+  // argued a counter-case, so an empty state is a real, honest condition
+  // worth naming, not a bug to hide.
+  section.style.display = "";
   if (!data.challenges || data.challenges.length === 0) {
-    section.style.display = "none";
+    el.innerHTML = `<p class="subtext">No adversarial challenge has been generated yet. This Tier 3 stretch feature asks the LLM to argue the strongest counter-case against the currently-SURVIVED hypothesis, using a different dimension, then runs that counter-hypothesis through the identical L4/L5 falsification pipeline -- it only has something to show once a live generation run has actually done that. Click <strong>"Run live LLM generation now"</strong> in LLM Backend Settings below to generate one.</p>`;
     return;
   }
-  section.style.display = "";
   el.innerHTML = data.challenges
     .map((c) => {
       const meaning = c.verdict === "SURVIVED"
