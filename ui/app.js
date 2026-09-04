@@ -646,8 +646,10 @@ function renderTelemetry(data) {
     <div class="tstat"><div class="n">${s.deterministic_calls}</div><div class="l">deterministic</div></div>
     <div class="tstat"><div class="n">${Math.round(s.total_latency_ms)}ms</div><div class="l">total latency</div></div>
     <div class="tstat"><div class="n">$${s.total_cost_usd.toFixed(4)}</div><div class="l">actual cost</div></div>
+    <div class="tstat"><div class="n">${s.total_tokens.toLocaleString()}</div><div class="l">tokens processed</div></div>
+    <div class="tstat" title="What these same LLM calls would have cost on a hosted API (OpenRouter pricing) -- computed from real token counts, not a placeholder. The local-GPU path actually spent $0; this is what it avoided spending."><div class="n" style="color:var(--survived)">$${s.estimated_cost_avoided_usd.toFixed(4)}</div><div class="l">cloud cost avoided</div></div>
   </div>
-  <p class="subtext" style="margin-top:10px">Cumulative across every run + interactive call in this ledger's history: ${data.session_summary.total_calls} stages, ${data.session_summary.llm_calls} LLM calls, ${Math.round(data.session_summary.total_latency_ms).toLocaleString()}ms total latency, $${data.session_summary.total_cost_usd.toFixed(4)} total cost.</p>`;
+  <p class="subtext" style="margin-top:10px">Cumulative across every run + interactive call in this ledger's history: ${data.session_summary.total_calls} stages, ${data.session_summary.llm_calls} LLM calls, ${Math.round(data.session_summary.total_latency_ms).toLocaleString()}ms total latency, $${data.session_summary.total_cost_usd.toFixed(4)} total cost, $${data.session_summary.estimated_cost_avoided_usd.toFixed(4)} cloud cost avoided across ${data.session_summary.total_tokens.toLocaleString()} tokens.</p>`;
 }
 
 // ==================================================================== persona-scoped page layout

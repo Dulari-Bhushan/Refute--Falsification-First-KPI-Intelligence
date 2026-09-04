@@ -41,6 +41,7 @@ from engine.drift_monitor import assess_drift, run_drift_demo
 from engine.knowledge_graph import load_graph
 from engine.proactive_monitor import run_alert_demo
 from engine.llm_config import VALID_BACKENDS, public_llm_config, set_llm_config
+from engine.l4_llm_generation import estimate_hosted_cost
 
 ROOT = Path(__file__).parent.parent
 DATA_DIR = ROOT / "data" / "synthetic"
@@ -202,12 +203,22 @@ PIPELINE_RUN_ID_RE = re.compile(r"^[0-9a-f]{8}$")
 
 def _summarize_telemetry(rows: list[dict]) -> dict:
     total_llm = sum(1 for r in rows if r["is_llm_call"])
+    tokens_in = sum(r["tokens_in"] or 0 for r in rows if r["is_llm_call"])
+    tokens_out = sum(r["tokens_out"] or 0 for r in rows if r["is_llm_call"])
     return {
         "total_calls": len(rows),
         "llm_calls": total_llm,
         "deterministic_calls": len(rows) - total_llm,
         "total_latency_ms": sum(r["latency_ms"] for r in rows),
         "total_cost_usd": sum(r["estimated_cost_usd"] for r in rows),
+        "total_tokens": tokens_in + tokens_out,
+        # What these same LLM calls would have cost on a hosted API,
+        # regardless of which backend actually ran them -- the local-GPU
+        # path is genuinely $0 marginal cost, and this is what makes that
+        # a stated, quantified win rather than just an absence of a number.
+        # Reuses the exact pricing engine/l4_llm_generation.py already
+        # applies to its own console output; not a separate estimate.
+        "estimated_cost_avoided_usd": estimate_hosted_cost(tokens_in, tokens_out),
     }
 
 
